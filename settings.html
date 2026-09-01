@@ -1,0 +1,55 @@
+<div class="am-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>AutoMemory</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+
+            <div class="am-row">
+                <label class="checkbox_label" for="am_enabled">
+                    <input type="checkbox" id="am_enabled" />
+                    <span>Включено</span>
+                </label>
+                <small class="am-hint">
+                    Расширение читает ответы персонажа и, увидев блок
+                    <code>&lt;memory&gt;</code>, дописывает запись в его блокнот.
+                </small>
+            </div>
+
+            <div class="am-row">
+                <label class="checkbox_label" for="am_debug">
+                    <input type="checkbox" id="am_debug" />
+                    <span>Подробный лог в консоль</span>
+                </label>
+            </div>
+
+            <div class="am-row">
+                <label for="am_lorebook_name">Название лорбука</label>
+                <input type="text" id="am_lorebook_name" class="text_pole" placeholder="БЛОКНОТ" />
+                <small class="am-hint">
+                    Запись с этим названием внутри мира персонажа. Заведите её сами,
+                    пустой: расширение ничего не создаёт и не удаляет. Мир берётся
+                    из карточки персонажа, поле <b>World</b>.
+                </small>
+            </div>
+
+            <div class="am-row">
+                <label for="am_core_categories">Категории-ядро</label>
+                <input type="text" id="am_core_categories" class="text_pole" placeholder="META, ANALYTICS_NEK" />
+                <small class="am-hint">
+                    Через запятую. Записи этих категорий ИИ видит всегда.
+                    Остальное — оглавление и записи, чьи <code>Ключи:</code> встретились
+                    в последних сообщениях.
+                </small>
+            </div>
+
+            <div class="am-row">
+                <label for="am_scan_depth">Глубина сканирования ключей</label>
+                <input type="number" id="am_scan_depth" class="text_pole" min="1" max="20" />
+                <small class="am-hint">Сколько последних сообщений проверяется на <code>Ключи:</code>.</small>
+            </div>
+
+        </div>
+    </div>
+</div>
