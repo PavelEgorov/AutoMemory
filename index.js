@@ -10,7 +10,7 @@ import { getStringHash } from '../../../utils.js';
 import { MODULE_NAME, LOG_PREFIX, getSettings, saveSettings, log } from './src/settings.js';
 import { extractBlocks } from './src/parse.js';
 import { parseNotebook, renderNotebook, appendRecord, resolveRefine } from './src/notebook.js';
-import { resolveWorlds, resolveCharacter, charExtraWorlds, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
+import { resolveWorlds, resolveCharacter, charExtraWorlds, bindingSnapshot, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
 import { buildInjection, runQuery } from './src/delivery.js';
 
 const EXTENSION_PATH = decodeURIComponent(new URL('.', import.meta.url).pathname)
@@ -273,6 +273,7 @@ async function runDiagnostics() {
             out.push('основной мир в карточке: ' + (character.data?.extensions?.world || '— пусто —'));
             const extra = charExtraWorlds(character);
             out.push('дополнительные миры: ' + (extra.length ? extra.join(', ') : '— нет —'));
+            for (const line of bindingSnapshot(ctx, character)) out.push(line);
             if (character.data?.character_book) out.push('встроенный в карточку мир: есть (не файл World Info)');
         }
         const known = typeof ctx.getWorldInfoNames === 'function' ? ctx.getWorldInfoNames() : [];

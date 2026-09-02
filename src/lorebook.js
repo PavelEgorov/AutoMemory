@@ -8,7 +8,7 @@
  * Путь импорта: файл лежит в third-party/<папка>/src/, до scripts/ — четыре уровня вверх.
  */
 
-import { setWIOriginalDataValue, originalWIDataKeyMap, world_info } from '../../../../world-info.js';
+import { setWIOriginalDataValue, originalWIDataKeyMap, world_info, selected_world_info } from '../../../../world-info.js';
 import { looksLikeNotebook } from './notebook.js';
 
 export const PROBLEM = {
@@ -78,6 +78,30 @@ export function charExtraWorlds(character) {
         console.warn('[AutoMemory] не удалось прочитать дополнительные миры:', e);
         return [];
     }
+}
+
+/**
+ * Сырой снимок всех мест, где таверна может хранить привязку миров.
+ * Только для диагностики: печатается человеку, на поведение не влияет.
+ */
+export function bindingSnapshot(ctx, character) {
+    const out = [];
+    const show = (v) => v === undefined ? 'undefined' : v === '' ? '«» (пустая строка)' : JSON.stringify(v);
+    out.push('data.extensions.world: ' + show(character?.data?.extensions?.world));
+    out.push('character.world (старое поле): ' + show(character?.world));
+    try { out.push('привязка к чату (chatMetadata): ' + show(ctx.chatMetadata?.['world_info'])); }
+    catch { out.push('привязка к чату: недоступна'); }
+    try {
+        out.push('активные глобально: ' + (Array.isArray(selected_world_info) && selected_world_info.length
+            ? selected_world_info.join(', ') : '— нет —'));
+    } catch { out.push('активные глобально: недоступны'); }
+    try {
+        const lore = Array.isArray(world_info?.charLore) ? world_info.charLore : [];
+        out.push('charLore целиком: ' + (lore.length
+            ? lore.map(e => String(e?.name) + ' → [' + (e?.extraBooks ?? []).join(', ') + ']').join('; ')
+            : '— пусто —'));
+    } catch (e) { out.push('charLore: ошибка чтения — ' + String(e?.message ?? e)); }
+    return out;
 }
 
 /** «[БЛОКНОТ SOL]» и «блокнот sol» считаются одним названием. */
