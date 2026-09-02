@@ -97,7 +97,11 @@ export function buildInjection(content, { coreCategories = [], recentText = '' }
  */
 export function parseQuery(query) {
     const q = String(query ?? '').trim();
-    const out = { all: !q, tags: [], category: null };
+    const out = { all: !q, glossary: false, tags: [], category: null };
+    if (q.toLowerCase() === 'оглавление') {
+        out.glossary = true;
+        return out;
+    }
     for (const word of q.split(/\s+/).filter(Boolean)) {
         if (word.startsWith('#')) {
             const tag = word.slice(1).toLowerCase();
@@ -115,6 +119,7 @@ export function parseQuery(query) {
  */
 export function runQuery(content, query) {
     const f = parseQuery(query);
+    if (f.glossary) return glossarySlice(content);
     if (f.all) return String(content ?? '');
 
     const model = parseNotebook(content);
