@@ -321,7 +321,11 @@ function renderBindings() {
         const row = document.createElement('div');
         row.className = 'am-bind-row';
         const label = document.createElement('span');
-        label.textContent = nameOf(avatar) + ' → ' + (b.world || '?') + ' / ' + (b.lorebook || '?');
+        if (b.world && b.lorebook) {
+            label.textContent = nameOf(avatar) + ' → ' + b.world + ' / ' + b.lorebook;
+        } else {
+            label.textContent = '⚠ ' + nameOf(avatar) + ' → связка неполная, добавьте заново';
+        }
         const del = document.createElement('button');
         del.className = 'menu_button am-bind-del';
         del.textContent = '✕';
