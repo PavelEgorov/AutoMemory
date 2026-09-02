@@ -13,6 +13,7 @@ const defaults = Object.freeze({
     scanDepth: 2,              // сколько последних сообщений сканировать на «Ключи:»
     keepBlocks: false,         // не вырезать блоки <memory> из видимого текста
     trimToolPass: false,       // экономное продолжение после note_show: второй проход без давней истории
+    trimToolPassHard: false,   // жёсткая экономия: во втором проходе вырезать и карточку с инструкциями
     bindings: {},              // связки персонаж → мир: { 'avatar.png': 'SOL' }
 });
 

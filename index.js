@@ -261,12 +261,21 @@ function onPromptReady(eventData) {
         const firstTool = chat.findIndex(m => Array.isArray(m?.tool_calls) || m?.role === 'tool');
         const head = chat.slice(0, firstTool);
         const toolChain = chat.slice(firstTool);
-        const systems = head.filter(m => m?.role === 'system');
+        let systems = head.filter(m => m?.role === 'system');
         const dialog = head.filter(m => m?.role !== 'system');
-        if (dialog.length <= TRIM_KEEP) return;
+        if (!s.trimToolPassHard && dialog.length <= TRIM_KEEP) return;
+
+        // жёсткая экономия: карточку и инструкции тоже долой; голос персонажа
+        // модель снимет с его же реплик в хвосте, оглавление блокнота оставляем
+        if (s.trimToolPassHard) {
+            systems = [
+                { role: 'system', content: 'Continue your interrupted reply. Stay in the same character, voice and language as the assistant messages below.' },
+                ...systems.filter(m => String(m?.content ?? '').includes('[INDEX]')),
+            ];
+        }
 
         // хвост диалога; тянем вверх до реплики человека, чтобы не начинать с ответа
-        let from = dialog.length - TRIM_KEEP;
+        let from = Math.max(0, dialog.length - TRIM_KEEP);
         while (from > 0 && dialog[from]?.role !== 'user' && dialog.length - from < TRIM_KEEP + 4) from--;
 
         const before = chat.length;
@@ -525,6 +534,13 @@ function bindUI() {
             saveSettings();
         });
     }
+    const trimHard = document.getElementById('am_trim_hard');
+    if (trimHard) {
+        trimHard.addEventListener('change', (e) => {
+            getSettings().trimToolPassHard = e.target.checked;
+            saveSettings();
+        });
+    }
     const chk = document.getElementById('am_check');
     if (chk) chk.addEventListener('click', runDiagnostics);
     bindBindingsUI();
@@ -558,6 +574,8 @@ function updateUI() {
     if (keep) keep.checked = s.keepBlocks;
     const trim = document.getElementById('am_trim_tool');
     if (trim) trim.checked = s.trimToolPass;
+    const trimHard = document.getElementById('am_trim_hard');
+    if (trimHard) trimHard.checked = s.trimToolPassHard;
     const st = document.getElementById('am_status');
     if (st) st.textContent = lastStatus;
 }
