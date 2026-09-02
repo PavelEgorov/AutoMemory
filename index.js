@@ -79,6 +79,7 @@ async function onGenerationStarted(type, _params, dryRun) {
             extraSlices = await runReflex(ctx, content);
         } catch (e) {
             log('рефлекс не сработал:', e?.message ?? e);
+            setPanelStatus('рефлекс не сработал: ' + String(e?.message ?? e));
         }
     }
 
@@ -121,7 +122,9 @@ async function runReflex(ctx, content) {
 
     const slices = reflexSlices(content, reply);
     lastScout = { mark, slices };
-    log('рефлекс:', String(reply ?? '').trim(), '->', slices.length, 'записей');
+    const said = String(reply ?? '').trim() || '(пусто)';
+    log('рефлекс:', said, '->', slices.length, 'записей');
+    setPanelStatus('рефлекс: ' + said + (slices.length ? ' — поднято записей: ' + slices.length : ' — ничего не поднято'));
     return slices;
 }
 
