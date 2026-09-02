@@ -205,6 +205,35 @@ function redraw(ctx, messageIndex, msg) {
     }
 }
 
+// ─── Скрытие своих вызовов инструмента из чата ───────────────────────
+
+/**
+ * Таверна после каждого вызова кладёт в чат системное сообщение с результатом.
+ * Наши вызовы note_show — служебная кухня: убираем их сообщение сразу после
+ * отрисовки, пока оно не сохранилось и не уехало в промпт следующих ходов.
+ * Галка «Не вырезать» оставляет их видимыми — как и блоки.
+ */
+function onToolCallsRendered(invocations) {
+    try {
+        const s = getSettings();
+        if (!s.enabled || s.keepBlocks) return;
+        if (!Array.isArray(invocations) || !invocations.length) return;
+        if (!invocations.every(inv => inv?.name === 'note_show')) return;
+
+        const ctx = SillyTavern.getContext();
+        const chat = ctx.chat;
+        const last = chat?.[chat.length - 1];
+        if (!last?.is_system || !Array.isArray(last?.extra?.tool_invocations)) return;
+
+        const mesId = chat.length - 1;
+        chat.pop(); // до saveChatConditional — сообщение не попадёт ни в файл, ни в промпт
+        document.querySelector(`#chat .mes[mesid="${mesId}"]`)?.remove();
+        log('сообщение о вызове note_show убрано из чата');
+    } catch (e) {
+        log('не удалось убрать сообщение о вызове:', e);
+    }
+}
+
 // ─── Инструмент note_show ────────────────────────────────────────────
 
 /**
@@ -484,6 +513,7 @@ function updateUI() {
 
     eventSource.on(event_types.MESSAGE_RECEIVED, onMessageReceived);
     eventSource.on(event_types.GENERATION_STARTED, onGenerationStarted);
+    eventSource.on(event_types.TOOL_CALLS_RENDERED, onToolCallsRendered);
     eventSource.on(event_types.CHAT_CHANGED, () => inject(''));
 
     eventSource.on(event_types.APP_READY, () => {
