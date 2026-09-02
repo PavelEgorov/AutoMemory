@@ -265,6 +265,11 @@ async function runDiagnostics() {
             out.push('персонаж: НЕ ОПРЕДЕЛЁН (characterId=' + String(ctx.characterId) + ')');
         } else {
             out.push('персонаж: ' + String(character.name) + ' (' + String(character.avatar) + ')');
+            if (String(character.avatar).startsWith('default_Assistant')) {
+                out.push('⚠ это встроенный Ассистент таверны. Кнопка смотрит на персонажа');
+                out.push('открытого чата — открой чат со своей карточкой и нажми снова,');
+                out.push('либо привяжи мир к самому Ассистенту (глобус на его карточке).');
+            }
             out.push('основной мир в карточке: ' + (character.data?.extensions?.world || '— пусто —'));
             const extra = charExtraWorlds(character);
             out.push('дополнительные миры: ' + (extra.length ? extra.join(', ') : '— нет —'));
