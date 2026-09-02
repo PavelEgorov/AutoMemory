@@ -18,6 +18,14 @@ const EXTENSION_PATH = decodeURIComponent(new URL('.', import.meta.url).pathname
 
 const fingerprint = (s) => String(getStringHash(String(s)));
 
+/** Последний результат работы — показывается только в панели настроек. */
+let lastStatus = 'ещё не было записей';
+function setPanelStatus(text) {
+    lastStatus = text;
+    const el = document.getElementById('am_status');
+    if (el) el.textContent = text;
+}
+
 // ─── Доставка в контекст ─────────────────────────────────────────────
 
 /** Глубина вставки инъекции: за четыре сообщения от конца, системной ролью. */
@@ -172,6 +180,7 @@ async function onMessageReceived(messageIndex) {
 /** Ничего не сохранили. Блок из сообщения всё равно убран. Никаких уведомлений:
  * это память ИИ, а не человека. Причина — только в консоль, для диагностики. */
 function refuse(reason) {
+    setPanelStatus('запись не сохранена: ' + reason);
     console.warn(LOG_PREFIX, 'запись не сохранена:', reason);
 }
 
@@ -185,6 +194,7 @@ function report(written, bad, lost, truncatedNote = '') {
     for (const cat of lost) parts.push(`в записи (${cat}) не найдена строка для «Уточняет» — отметка снята`);
     if (truncatedNote) parts.push(truncatedNote);
 
+    setPanelStatus(parts.join('; '));
     log('готово:', parts.join('; '));
 }
 
@@ -262,6 +272,8 @@ function updateUI() {
     if (name) name.value = s.lorebookName;
     if (core) core.value = s.coreCategories;
     if (depth) depth.value = s.scanDepth;
+    const st = document.getElementById('am_status');
+    if (st) st.textContent = lastStatus;
 }
 
 // ─── Запуск ──────────────────────────────────────────────────────────
