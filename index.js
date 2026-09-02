@@ -10,7 +10,7 @@ import { getStringHash } from '../../../utils.js';
 import { MODULE_NAME, LOG_PREFIX, getSettings, saveSettings, log } from './src/settings.js';
 import { extractBlocks } from './src/parse.js';
 import { parseNotebook, renderNotebook, appendRecord, resolveRefine } from './src/notebook.js';
-import { resolveTarget, resolveCharacter, bindingOf, bindingSnapshot, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
+import { resolveTarget, resolveCharacter, charExtraWorlds, bindingOf, bindingSnapshot, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
 import { buildInjection, runQuery } from './src/delivery.js';
 
 const EXTENSION_PATH = decodeURIComponent(new URL('.', import.meta.url).pathname)

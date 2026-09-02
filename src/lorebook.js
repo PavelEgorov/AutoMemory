@@ -111,34 +111,41 @@ function normalizeName(s) {
 }
 
 /**
- * Находит лорбук в мире по названию из настроек и проверяет его содержимое.
- * Пустой лорбук годится — начнём с чистого листа. Наш формат — работаем
- * с сохранёнными данными. Чужое содержимое не трогаем.
- * @returns {Promise<{data: object|null, entry: object|null, content: string, problem: string|null}>}
+ * Находит лорбук по названию в мирах (по порядку). Пустой лорбук годится —
+ * начнём с чистого листа. Наш формат — работаем с сохранённым. Чужое не трогаем.
+ * Во всех исходах возвращается world — имя мира, к которому относится итог.
+ * @returns {Promise<{world: string|null, data: object|null, entry: object|null, content: string, problem: string|null}>}
  */
-export async function readNotebook(ctx, world, lorebookName) {
+export async function readNotebook(ctx, worlds, lorebookName) {
     const name = normalizeName(lorebookName);
-
-    const data = name ? await ctx.loadWorldInfo(world) : null;
-    if (!name || !data || !data.entries) {
-        return { data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
+    const list = (Array.isArray(worlds) ? worlds : [worlds]).filter(Boolean);
+    if (!name || !list.length) {
+        return { world: list[0] ?? null, data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
     }
 
-    // точное совпадение названия важнее совпадения по началу
-    const all = Object.values(data.entries).filter(Boolean);
-    const entry =
-        all.find(e => normalizeName(e.comment) === name) ??
-        all.find(e => normalizeName(e.comment).startsWith(name));
+    let foreign = null;
+    for (const world of list) {
+        const data = await ctx.loadWorldInfo(world);
+        if (!data || !data.entries) continue;
 
-    if (!entry) {
-        return { data, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
-    }
-    const content = String(entry.content ?? '');
-    if (!looksLikeNotebook(content)) {
-        return { data, entry, content, problem: PROBLEM.FOREIGN };
+        // точное совпадение названия важнее совпадения по началу
+        const all = Object.values(data.entries).filter(Boolean);
+        const entry =
+            all.find(e => normalizeName(e.comment) === name) ??
+            all.find(e => normalizeName(e.comment).startsWith(name));
+        if (!entry) continue;
+
+        const content = String(entry.content ?? '');
+        if (!looksLikeNotebook(content)) {
+            foreign = { world, data, entry, content, problem: PROBLEM.FOREIGN };
+            continue;
+        }
+
+        return { world, data, entry, content, problem: null };
     }
 
-    return { data, entry, content, problem: null };
+    if (foreign) return foreign;
+    return { world: list[0], data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
 }
 
 /**
