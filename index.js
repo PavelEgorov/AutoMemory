@@ -9,7 +9,7 @@
 import { getStringHash } from '../../../utils.js';
 import { MODULE_NAME, LOG_PREFIX, getSettings, saveSettings, log } from './src/settings.js';
 import { extractBlocks } from './src/parse.js';
-import { parseNotebook, renderNotebook, appendRecord, resolveRefine } from './src/notebook.js';
+import { parseNotebook, renderNotebook, appendRecord, resolveRefine, resolveEdit, applyEdits } from './src/notebook.js';
 import { resolveTarget, resolveCharacter, charExtraWorlds, bindingOf, bindingSnapshot, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
 import { buildInjection, runQuery, glossarySlice, buildScoutPrompt, reflexSlices } from './src/delivery.js';
 
@@ -193,14 +193,33 @@ async function onMessageReceived(messageIndex) {
     const model = parseNotebook(content);
     const written = [];
     const lost = [];
+    const edits = [];
 
     for (const item of good) {
         const rec = item.record;
-        // «Уточняет» разрешаем по нумерации ДО пересчёта
-        if (!resolveRefine(model, rec)) lost.push(rec.category || 'без категории');
+        // команды правки и «Уточняет» разрешаем по нумерации ДО пересчёта
+        const edit = resolveEdit(model, rec);
+        if (edit?.error) {
+            lost.push(`«${edit.op === 'delete' ? 'Удаляет' : 'Заменяет'}: ${edit.line}» — строка не найдена, ничего не изменено`);
+        }
+        const hasBody = rec.lines.some(l => l.text.trim()) || rec.fields.length > 0;
+        if (edit && !edit.error) {
+            // «Заменяет» без текста работает как удаление
+            if (edit.op === 'replace' && !hasBody && !rec.category && !rec.tags.length) edit.op = 'delete';
+            if (edit.op === 'replace') {
+                if (!resolveRefine(model, rec)) lost.push(`в записи (${rec.category || 'без категории'}) не найдена строка для «Уточняет» — отметка снята`);
+                edits.push({ ...edit, record: rec });
+                continue;
+            }
+            edits.push(edit);
+            if (!hasBody) continue; // чистая команда удаления — записывать нечего
+        }
+        if (!resolveRefine(model, rec)) lost.push(`в записи (${rec.category || 'без категории'}) не найдена строка для «Уточняет» — отметка снята`);
         appendRecord(model, rec);
         written.push(rec);
     }
+
+    const editResults = applyEdits(model, edits);
 
     const next = renderNotebook(model);
 
@@ -213,7 +232,7 @@ async function onMessageReceived(messageIndex) {
     }
 
     cleanup();
-    report(written, bad, lost, truncatedNote);
+    report(written, bad, lost, truncatedNote, editResults);
 }
 
 /** Ничего не сохранили. Блок из сообщения всё равно убран. Никаких уведомлений:
@@ -223,14 +242,21 @@ function refuse(reason) {
     console.warn(LOG_PREFIX, 'запись не сохранена:', reason);
 }
 
-function report(written, bad, lost, truncatedNote = '') {
+function report(written, bad, lost, truncatedNote = '', editResults = []) {
     const parts = [];
     for (const rec of written) {
         const where = rec.category ? `в [${rec.category}]` : 'без категории';
         parts.push(rec.startLine ? `записано ${where}, строка ${rec.startLine}` : `записано ${where}`);
     }
+    for (const r of editResults) {
+        const target = r.ref?.l === -1 ? `запись (была строка ${r.line})` : `строка ${r.line}`;
+        const from = r.category ? ` из [${r.category}]` : '';
+        if (!r.ok) parts.push(`«${r.op === 'delete' ? 'Удаляет' : 'Заменяет'}: ${r.line}» не применилось — цель не найдена`);
+        else if (r.op === 'delete') parts.push(r.ref.l === -1 ? `удалена запись${from} (была строка ${r.line})` : `удалена ${target}${from}`);
+        else parts.push(`заменена ${target}${r.record?.startLine ? ` — теперь строка ${r.record.startLine}` : ''}`);
+    }
     for (const item of bad) parts.push(`блок пропущен: ${item.error}`);
-    for (const cat of lost) parts.push(`в записи (${cat}) не найдена строка для «Уточняет» — отметка снята`);
+    for (const msg of lost) parts.push(msg);
     if (truncatedNote) parts.push(truncatedNote);
 
     setPanelStatus(parts.join('; '));

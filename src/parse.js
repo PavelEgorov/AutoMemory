@@ -72,6 +72,13 @@ function parseBlock(inner) {
             if (!f) break;
             fields.push({ key: f[1].trim(), value: f[2].trim() });
         }
+    } else {
+        // без маркера принимаются только команды правки — обычное поле требует категории
+        for (; i < lines.length; i++) {
+            const f = RE_FIELD.exec(lines[i]);
+            if (!f || (f[1].trim() !== 'Удаляет' && f[1].trim() !== 'Заменяет')) break;
+            fields.push({ key: f[1].trim(), value: f[2].trim() });
+        }
     }
 
     // тело

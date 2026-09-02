@@ -156,6 +156,91 @@ export function resolveRefine(model, record) {
     return false;
 }
 
+// ─── Правка ──────────────────────────────────────────────────────────
+
+/**
+ * Разрешает команду правки «Удаляет: N» / «Заменяет: N» — по нумерации ДО пересчёта.
+ * Поле снимается с записи. Номер может указывать на маркер (запись целиком)
+ * или на строку текста. Строки полей не адресуются.
+ * @returns {{op: 'delete'|'replace', ref?: {r:number,l:number}, line: number, error?: boolean}|null}
+ */
+export function resolveEdit(model, record) {
+    const i = record.fields.findIndex(f => f.key === 'Удаляет' || f.key === 'Заменяет');
+    if (i < 0) return null;
+    const f = record.fields[i];
+    record.fields.splice(i, 1);
+    const op = f.key === 'Удаляет' ? 'delete' : 'replace';
+    const line = Number(f.value);
+    const ref = model.lineIndex.get(line);
+    if (!ref) return { op, line, error: true };
+    return { op, ref: { r: ref.r, l: ref.l }, line };
+}
+
+/** Убирает запись r; ссылки «Уточняет» на неё снимаются, остальные съезжают. */
+function dropRecord(model, r) {
+    model.records.splice(r, 1);
+    // refines могут делить один объект (общая цель) — правим каждый объект один раз
+    const objs = new Set(model.records.map(x => x.refines).filter(Boolean));
+    const dead = new Set();
+    for (const rf of objs) {
+        if (rf.r === r) dead.add(rf);
+        else if (rf.r > r) rf.r--;
+    }
+    for (const rec of model.records) {
+        if (rec.refines && dead.has(rec.refines)) rec.refines = null;
+    }
+}
+
+/** Сдвигает ссылки на строки записи r после позиции fromL. */
+function shiftLineRefs(model, r, fromL, delta) {
+    if (!delta) return;
+    const objs = new Set(model.records.map(x => x.refines).filter(Boolean));
+    for (const rf of objs) {
+        if (rf.r === r && rf.l !== -1 && rf.l > fromL) rf.l += delta;
+    }
+}
+
+/**
+ * Применяет команды правки к модели. Порядок надёжный: сначала строки
+ * (снизу вверх), затем замены записей на месте, затем удаления записей (с конца).
+ * @param {object[]} edits элементы из resolveEdit, у замен — поле record
+ * @returns {object[]} исходы для отчёта: {...edit, ok, category}
+ */
+export function applyEdits(model, edits) {
+    const out = [];
+
+    const lineOps = edits.filter(e => e.ref.l !== -1).sort((a, b) => b.ref.l - a.ref.l);
+    for (const e of lineOps) {
+        const rec = model.records[e.ref.r];
+        if (!rec || e.ref.l >= rec.lines.length) { out.push({ ...e, ok: false }); continue; }
+        if (e.op === 'delete') {
+            rec.lines.splice(e.ref.l, 1);
+            shiftLineRefs(model, e.ref.r, e.ref.l, -1);
+        } else {
+            rec.lines.splice(e.ref.l, 1, ...e.record.lines);
+            shiftLineRefs(model, e.ref.r, e.ref.l, e.record.lines.length - 1);
+        }
+        out.push({ ...e, ok: true, category: rec.category });
+    }
+
+    for (const e of edits.filter(x => x.ref.l === -1 && x.op === 'replace')) {
+        const old = model.records[e.ref.r];
+        if (!old) { out.push({ ...e, ok: false }); continue; }
+        absorbDescriptions(model, e.record);
+        model.records[e.ref.r] = e.record;
+        out.push({ ...e, ok: true, category: old.category });
+    }
+
+    for (const e of edits.filter(x => x.ref.l === -1 && x.op === 'delete').sort((a, b) => b.ref.r - a.ref.r)) {
+        const old = model.records[e.ref.r];
+        if (!old) { out.push({ ...e, ok: false }); continue; }
+        dropRecord(model, e.ref.r);
+        out.push({ ...e, ok: true, category: old.category });
+    }
+
+    return out;
+}
+
 // ─── Сборка ──────────────────────────────────────────────────────────
 
 /**
@@ -263,8 +348,8 @@ export function renderNotebook(model) {
     return gloss.concat(body).join('\n');
 }
 
-/** Дописывает запись в конец блокнота, забирая пояснения меток в оглавление. */
-export function appendRecord(model, record) {
+/** Забирает пояснения меток записи в оглавление. */
+function absorbDescriptions(model, record) {
     if (record.catDescription && record.category) {
         model.descriptions.cat[record.category] = record.catDescription;
     }
@@ -273,6 +358,11 @@ export function appendRecord(model, record) {
     }
     delete record.catDescription;
     delete record.tagDescriptions;
+}
+
+/** Дописывает запись в конец блокнота, забирая пояснения меток в оглавление. */
+export function appendRecord(model, record) {
+    absorbDescriptions(model, record);
     model.records.push(record);
     return model;
 }
