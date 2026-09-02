@@ -9,7 +9,7 @@
 import { getStringHash } from '../../../utils.js';
 import { MODULE_NAME, LOG_PREFIX, getSettings, saveSettings, log } from './src/settings.js';
 import { extractBlocks } from './src/parse.js';
-import { parseNotebook, renderNotebook, appendRecord, resolveRefine, formatDate } from './src/notebook.js';
+import { parseNotebook, renderNotebook, appendRecord, resolveRefine } from './src/notebook.js';
 import { resolveWorld, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
 import { buildInjection, runQuery } from './src/delivery.js';
 
@@ -136,20 +136,18 @@ async function onMessageReceived(messageIndex) {
 
     // Пишем
     const model = parseNotebook(content);
-    const today = formatDate();
     const written = [];
     const lost = [];
 
     for (const item of good) {
         const rec = item.record;
-        rec.date = today;
         // «Уточняет» разрешаем по нумерации ДО пересчёта
         if (!resolveRefine(model, rec)) lost.push(rec.category || 'без категории');
         appendRecord(model, rec);
         written.push(rec);
     }
 
-    const next = renderNotebook(model, today);
+    const next = renderNotebook(model);
 
     try {
         await writeNotebook(ctx, world, data, entry, next);
@@ -221,10 +219,8 @@ function registerNoteTool(ctx) {
         name: 'note_show',
         displayName: 'Блокнот',
         description: 'Твой блокнот — долговременная память в лорбуке. Возвращает записи по фильтру. ' +
-            'Фильтр: категория (например ANALYTICS_NEK), тег с решёткой (#spiral), дата (15.01.2026), ' +
-            'месяц (декабрь), период (с декабря по февраль) или «за последний месяц». ' +
-            'Фильтры комбинируются через пробел и работают как И: «#spiral с декабря по февраль». ' +
-            'Пустой фильтр — весь блокнот целиком.',
+            'Фильтр: категория (например ANALYTICS_NEK) и/или тег с решёткой (#spiral); ' +
+            'вместе работают как И: «META #spiral». Пустой фильтр — весь блокнот целиком.',
         parameters: {
             $schema: 'http://json-schema.org/draft-04/schema#',
             type: 'object',

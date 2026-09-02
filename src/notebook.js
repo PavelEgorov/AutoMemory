@@ -4,6 +4,7 @@
  * Про SillyTavern здесь не знают ничего: на входе строка, на выходе строка.
  * Формат описан в docs/structure.md. Текст никогда не выбрасывается:
  * непонятные строки сохраняются, «---» в тексте записи не рвёт её.
+ * Дат в формате нет.
  */
 
 import { RE_FIELD, RE_TAGGED, parseMarkerTags } from './patterns.js';
@@ -11,10 +12,8 @@ import { RE_FIELD, RE_TAGGED, parseMarkerTags } from './patterns.js';
 const SEP = '---';
 const INDEX_MARKER = '[INDEX] [META]';
 
-/** Маркер записи: [дата] [КАТЕГОРИЯ] хвост. Категория необязательна. */
-const RE_MARKER = /^\[([^\]]*)\]\s*\[([^\]]+)\](.*)$/;
-/** Маркер без категории: только дата ДД.ММ.ГГГГ — иначе любая [скобка] стала бы маркером */
-const RE_MARKER_BARE = /^\[(\d{2}\.\d{2}\.\d{4})\](.*)$/;
+/** Маркер записи: [КАТЕГОРИЯ] хвост. Пустые скобки — запись без категории. */
+const RE_MARKER = /^\[([^\]]*)\](.*)$/;
 /** Голова строки оглавления: «- ИМЯ — пояснение» или «- ИМЯ» */
 const RE_GLOSS_HEAD = /^-\s+(.+?)(?:\s+—\s+(.+))?$/;
 /** Отметка об уточнении на маркере — при разборе снимаем, при сборке ставим заново */
@@ -28,7 +27,7 @@ function isSeparator(lines, i) {
         const next = lines[j].trim();
         if (!next) continue;
         if (next === SEP) return true;
-        return RE_MARKER.test(next) || RE_MARKER_BARE.test(next);
+        return RE_MARKER.test(next);
     }
     return true; // конец текста
 }
@@ -99,22 +98,20 @@ export function parseNotebook(content) {
 
         if (!cur) {
             const m = RE_MARKER.exec(line);
-            const b = m ? null : RE_MARKER_BARE.exec(line);
-            if (!m && !b) {
+            if (!m) {
                 // не маркер — но текст не выбрасываем: не понял — сохрани
                 if (!line.trim()) continue;
                 if (records.length) pushLine(records[records.length - 1], records.length - 1, abs, line);
                 else preamble.push(line);
                 continue;
             }
-            const rawTail = (m ? m[3] : b[2]).replace(RE_MARK, '');
-            const category = m ? m[2].trim().toUpperCase() : '';
+            const category = m[1].trim().toUpperCase();
+            const rawTail = m[2].replace(RE_MARK, '');
             const cm = /^\(([^)]*)\)/.exec(rawTail.trim());
             if (cm && category && cm[1].trim()) descriptions.cat[category] = cm[1].trim();
             const parsed = parseMarkerTags(rawTail);
             Object.assign(descriptions.tag, parsed.descriptions);
             cur = {
-                date: (m ? m[1] : b[1]).trim(),
                 category,
                 tags: parsed.tags,
                 fields: [],
@@ -165,10 +162,9 @@ export function resolveRefine(model, record) {
  * Собирает текст блокнота: оглавление, нумерация, отметки об уточнении.
  * Попутно проставляет каждой записи rec.startLine — её строку в новом тексте.
  * @param {{records: object[], preamble?: string[], descriptions: object}} model
- * @param {string} [today] дата для шапки оглавления
  * @returns {string}
  */
-export function renderNotebook(model, today = formatDate()) {
+export function renderNotebook(model) {
     const { records, descriptions } = model;
     const preamble = model.preamble ?? [];
 
@@ -231,7 +227,7 @@ export function renderNotebook(model, today = formatDate()) {
 
     const gloss = [
         INDEX_MARKER,
-        `Обновлено: ${today} · записей: ${records.length} · строк: ${total}`,
+        `Записей: ${records.length} · строк: ${total}`,
         '',
         'КАТЕГОРИИ:',
     ];
@@ -252,7 +248,7 @@ export function renderNotebook(model, today = formatDate()) {
     // 6. тело
     const body = [...preamble];
     records.forEach((rec, ri) => {
-        let marker = rec.category ? `[${rec.date}] [${rec.category}]` : `[${rec.date}]`;
+        let marker = `[${rec.category}]`;
         for (const t of rec.tags) marker += ` #${t}`;
         for (const m of marks.get(ri) || []) marker += m;
         body.push(marker);
@@ -286,11 +282,6 @@ export function looksLikeNotebook(content) {
     const s = String(content ?? '').trim();
     if (!s) return true;
     return s.startsWith('[INDEX]');
-}
-
-export function formatDate(d = new Date()) {
-    const p = (x) => String(x).padStart(2, '0');
-    return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
 
 // ─── Мелочи ──────────────────────────────────────────────────────────
