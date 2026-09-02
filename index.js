@@ -344,12 +344,17 @@ function renderBindings() {
     const s = getSettings();
     const chars = Array.isArray(ctx.characters) ? ctx.characters : [];
     const nameOf = (avatar) => chars.find(c => c?.avatar === avatar)?.name ?? avatar;
+    const current = resolveCharacter(ctx, -1);
 
     box.textContent = '';
     for (const [avatar, raw] of Object.entries(s.bindings ?? {})) {
         const b = typeof raw === 'string' ? { world: raw, lorebook: '' } : raw;
         const row = document.createElement('div');
         row.className = 'am-bind-row';
+        if (current && (avatar === current.avatar || avatar === current.name)) {
+            row.classList.add('am-bind-current');
+            row.title = 'текущий персонаж';
+        }
         const label = document.createElement('span');
         if (b.world && b.lorebook) {
             label.textContent = nameOf(avatar) + ' → ' + b.world + ' / ' + b.lorebook;
@@ -426,6 +431,12 @@ function bindBindingsUI() {
         if (!lorebook) return setPanelStatus('связка не сохранена: не выбран лорбук (третий список)');
         const s = getSettings();
         if (!s.bindings || typeof s.bindings !== 'object') s.bindings = {};
+        // одна строка на персонажа: ключ — аватар, повторное «Добавить» перезаписывает;
+        // заодно сносим устаревший ключ той же карточки по имени
+        const ch = (SillyTavern.getContext().characters ?? []).find(c => c?.avatar === avatar);
+        for (const k of Object.keys(s.bindings)) {
+            if (k !== avatar && ch && k === ch.name) delete s.bindings[k];
+        }
         s.bindings[avatar] = { world, lorebook };
         saveSettings();
         renderBindings();
@@ -514,7 +525,10 @@ function updateUI() {
     eventSource.on(event_types.MESSAGE_RECEIVED, onMessageReceived);
     eventSource.on(event_types.GENERATION_STARTED, onGenerationStarted);
     eventSource.on(event_types.TOOL_CALLS_RENDERED, onToolCallsRendered);
-    eventSource.on(event_types.CHAT_CHANGED, () => inject(''));
+    eventSource.on(event_types.CHAT_CHANGED, () => {
+        inject('');
+        renderBindings(); // подсветка текущего персонажа следует за открытым чатом
+    });
 
     eventSource.on(event_types.APP_READY, () => {
         updateUI();

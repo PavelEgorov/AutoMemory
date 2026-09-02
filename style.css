@@ -60,3 +60,9 @@
     flex: 1;
     min-width: 8em;
 }
+
+/* строка текущего персонажа в таблице связок */
+.am-settings .am-bind-row.am-bind-current > span {
+    color: var(--SmartThemeQuoteColor, #58a6d8);
+    font-weight: 600;
+}
