@@ -12,7 +12,6 @@ const defaults = Object.freeze({
     coreCategories: '',        // категории-ядро через запятую: уезжают в контекст всегда
     scanDepth: 2,              // сколько последних сообщений сканировать на «Ключи:»
     keepBlocks: false,         // не вырезать блоки <memory> из видимого текста
-    trimToolPass: false,       // экономное продолжение после note_show: второй проход без давней истории
     bindings: {},              // связки персонаж → мир: { 'avatar.png': 'SOL' }
 });
 
