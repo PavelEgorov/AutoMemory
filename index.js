@@ -10,7 +10,7 @@ import { getStringHash } from '../../../utils.js';
 import { MODULE_NAME, LOG_PREFIX, getSettings, saveSettings, log } from './src/settings.js';
 import { extractBlocks } from './src/parse.js';
 import { parseNotebook, renderNotebook, appendRecord, resolveRefine } from './src/notebook.js';
-import { resolveWorlds, resolveCharacter, charExtraWorlds, bindingSnapshot, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
+import { resolveTarget, resolveCharacter, bindingOf, bindingSnapshot, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
 import { buildInjection, runQuery } from './src/delivery.js';
 
 const EXTENSION_PATH = decodeURIComponent(new URL('.', import.meta.url).pathname)
@@ -58,10 +58,10 @@ async function onGenerationStarted(type, _params, dryRun) {
     const ctx = SillyTavern.getContext();
     // characterId к этому моменту указывает на говорящего и в группе:
     // setCharacterId(chId) в group-chats.js вызывается до генерации участника
-    const { worlds, problem } = resolveWorlds(ctx, -1, s.bindings);
-    if (problem) return inject('');
+    const t = resolveTarget(ctx, -1, s.bindings);
+    if (t.problem) return inject('');
 
-    const { content, problem: p2 } = await readNotebook(ctx, worlds, s.lorebookName);
+    const { content, problem: p2 } = await readNotebook(ctx, [t.world], t.lorebook);
     if (p2) return inject('');
 
     const recentText = (ctx.chat ?? [])
@@ -121,17 +121,17 @@ async function onMessageReceived(messageIndex) {
         return report([], bad, [], truncatedNote);
     }
 
-    // Куда писать: миры персонажа (основной и дополнительные), лорбук по названию
-    const { worlds, problem: worldProblem, character } = resolveWorlds(ctx, messageIndex, s.bindings);
-    if (worldProblem) {
+    // Куда писать: связка персонаж → мир → лорбук из таблицы настроек
+    const t = resolveTarget(ctx, messageIndex, s.bindings);
+    if (t.problem) {
         cleanup();
-        return refuse(describeProblem(worldProblem, character?.name ?? '?', s.lorebookName));
+        return refuse(describeProblem(t.problem, t.character?.name ?? '?', ''));
     }
 
-    const nb = await readNotebook(ctx, worlds, s.lorebookName);
+    const nb = await readNotebook(ctx, [t.world], t.lorebook);
     if (nb.problem) {
         cleanup();
-        return refuse(describeProblem(nb.problem, worlds.join('», «'), s.lorebookName));
+        return refuse(describeProblem(nb.problem, t.world, t.lorebook));
     }
     const { world, data, entry, content } = nb;
 
@@ -238,11 +238,11 @@ function registerNoteTool(ctx) {
             if (!s.enabled) return 'AutoMemory выключено.';
 
             const c = SillyTavern.getContext();
-            const { worlds, problem, character } = resolveWorlds(c, -1, s.bindings);
-            if (problem) return 'Блокнот недоступен: ' + describeProblem(problem, character?.name ?? '?', s.lorebookName);
+            const t = resolveTarget(c, -1, s.bindings);
+            if (t.problem) return 'Блокнот недоступен: ' + describeProblem(t.problem, t.character?.name ?? '?', '');
 
-            const nb = await readNotebook(c, worlds, s.lorebookName);
-            if (nb.problem) return 'Блокнот недоступен: ' + describeProblem(nb.problem, worlds.join('», «'), s.lorebookName);
+            const nb = await readNotebook(c, [t.world], t.lorebook);
+            if (nb.problem) return 'Блокнот недоступен: ' + describeProblem(nb.problem, t.world, t.lorebook);
 
             const result = runQuery(nb.content, args?.filter ?? '');
             log('note_show:', args?.filter || '(весь блокнот)', '->', result.length, 'симв.');
@@ -273,29 +273,28 @@ async function runDiagnostics() {
             out.push('основной мир в карточке: ' + (character.data?.extensions?.world || '— пусто —'));
             const extra = charExtraWorlds(character);
             out.push('дополнительные миры: ' + (extra.length ? extra.join(', ') : '— нет —'));
-            out.push('связка из таблицы: ' + (s.bindings?.[character.avatar] ?? '— нет —'));
+            const bnd = bindingOf(s.bindings, character.avatar);
+            out.push('связка из таблицы: ' + (bnd ? (bnd.world || '?') + ' / ' + (bnd.lorebook || '?') : '— нет —'));
             for (const line of bindingSnapshot(ctx, character)) out.push(line);
             if (character.data?.character_book) out.push('встроенный в карточку мир: есть (не файл World Info)');
         }
         const known = typeof ctx.getWorldInfoNames === 'function' ? ctx.getWorldInfoNames() : [];
         out.push('миров в системе: ' + known.length + (known.length ? ' — ' + known.slice(0, 6).join(', ') : ''));
 
-        const { worlds, problem } = resolveWorlds(ctx, -1, s.bindings);
-        if (problem) {
-            out.push('итог: ' + describeProblem(problem, character?.name ?? '?', s.lorebookName));
+        const t = resolveTarget(ctx, -1, s.bindings);
+        if (t.problem) {
+            out.push('итог: ' + describeProblem(t.problem, character?.name ?? '?', ''));
             setPanelStatus(out.join(String.fromCharCode(10)));
             return;
         }
-        out.push('миры персонажа: ' + worlds.join(' → '));
-        const nb = await readNotebook(ctx, worlds, s.lorebookName);
+        out.push('цель: мир «' + t.world + '», лорбук «' + t.lorebook + '»');
+        const nb = await readNotebook(ctx, [t.world], t.lorebook);
         if (nb.problem) {
-            out.push('итог: ' + describeProblem(nb.problem, worlds.join('», «'), s.lorebookName));
-            for (const w of worlds) {
-                const d = await ctx.loadWorldInfo(w);
-                const names = Object.values(d?.entries ?? {}).filter(Boolean)
-                    .map(e => String(e.comment ?? '').trim() || '(без названия)');
-                out.push('записи в «' + w + '»: ' + (names.length ? names.join(' | ') : '— пусто —'));
-            }
+            out.push('итог: ' + describeProblem(nb.problem, t.world, t.lorebook));
+            const d = await ctx.loadWorldInfo(t.world);
+            const names = Object.values(d?.entries ?? {}).filter(Boolean)
+                .map(e => String(e.comment ?? '').trim() || '(без названия)');
+            out.push('записи в «' + t.world + '»: ' + (names.length ? names.join(' | ') : '— пусто —'));
         } else {
             out.push('итог: лорбук найден в «' + nb.world + '», '
                 + (nb.content.trim() ? 'есть содержимое' : 'пуст, готов к первой записи'));
@@ -306,7 +305,7 @@ async function runDiagnostics() {
     setPanelStatus(out.join(String.fromCharCode(10)));
 }
 
-// ─── Таблица связок персонаж → мир ───────────────────────────────────
+// ─── Таблица связок персонаж → мир → лорбук ──────────────────────────
 
 function renderBindings() {
     const box = document.getElementById('am_bindings');
@@ -317,11 +316,12 @@ function renderBindings() {
     const nameOf = (avatar) => chars.find(c => c?.avatar === avatar)?.name ?? avatar;
 
     box.textContent = '';
-    for (const [avatar, world] of Object.entries(s.bindings ?? {})) {
+    for (const [avatar, raw] of Object.entries(s.bindings ?? {})) {
+        const b = typeof raw === 'string' ? { world: raw, lorebook: '' } : raw;
         const row = document.createElement('div');
         row.className = 'am-bind-row';
         const label = document.createElement('span');
-        label.textContent = nameOf(avatar) + ' → ' + world;
+        label.textContent = nameOf(avatar) + ' → ' + (b.world || '?') + ' / ' + (b.lorebook || '?');
         const del = document.createElement('button');
         del.className = 'menu_button am-bind-del';
         del.textContent = '✕';
@@ -343,23 +343,53 @@ function renderBindings() {
             charSel.append(new Option(c.name ?? c.avatar, c.avatar));
         }
         worldSel.textContent = '';
+        worldSel.append(new Option('— мир —', ''));
         const worlds = typeof ctx.getWorldInfoNames === 'function' ? ctx.getWorldInfoNames() : [];
         for (const w of worlds) worldSel.append(new Option(w, w));
+        fillLorebookSelect('');
+    }
+}
+
+/** Третья колонка: записи выбранного в этой строке мира. */
+async function fillLorebookSelect(world) {
+    const sel = document.getElementById('am_bind_lorebook');
+    if (!sel) return;
+    sel.textContent = '';
+    if (!world) {
+        sel.append(new Option('— сначала мир —', ''));
+        return;
+    }
+    try {
+        const ctx = SillyTavern.getContext();
+        const data = await ctx.loadWorldInfo(world);
+        const names = Object.values(data?.entries ?? {}).filter(Boolean)
+            .map(e => String(e.comment ?? '').trim())
+            .filter(Boolean);
+        if (!names.length) {
+            sel.append(new Option('— в мире нет записей —', ''));
+            return;
+        }
+        sel.append(new Option('— лорбук —', ''));
+        for (const n of names) sel.append(new Option(n, n));
+    } catch (e) {
+        log('не удалось прочитать мир для списка лорбуков:', e);
+        sel.append(new Option('— мир не прочитался —', ''));
     }
 }
 
 function bindBindingsUI() {
+    const worldSel = document.getElementById('am_bind_world');
+    if (worldSel) worldSel.addEventListener('change', (e) => fillLorebookSelect(e.target.value));
     const addBtn = document.getElementById('am_bind_add');
     if (!addBtn) return;
     addBtn.addEventListener('click', () => {
-        const charSel = document.getElementById('am_bind_char');
-        const worldSel = document.getElementById('am_bind_world');
-        const avatar = charSel?.value;
-        const world = worldSel?.value;
-        if (!avatar || !world) return;
+        const avatar = document.getElementById('am_bind_char')?.value;
+        const world = document.getElementById('am_bind_world')?.value;
+        const lorebook = document.getElementById('am_bind_lorebook')?.value;
+        if (!avatar || !world || !lorebook) return;
         const s = getSettings();
         if (!s.bindings || typeof s.bindings !== 'object') s.bindings = {};
-        s.bindings[avatar] = world;
+        s.bindings[avatar] = { world, lorebook };
         saveSettings();
         renderBindings();
     });
@@ -392,13 +422,6 @@ function bindUI() {
     const chk = document.getElementById('am_check');
     if (chk) chk.addEventListener('click', runDiagnostics);
     bindBindingsUI();
-    const name = document.getElementById('am_lorebook_name');
-    if (name) {
-        name.addEventListener('input', (e) => {
-            getSettings().lorebookName = e.target.value;
-            saveSettings();
-        });
-    }
     const core = document.getElementById('am_core_categories');
     if (core) {
         core.addEventListener('input', (e) => {
@@ -419,12 +442,10 @@ function updateUI() {
     const s = getSettings();
     const el = document.getElementById('am_enabled');
     const dbg = document.getElementById('am_debug');
-    const name = document.getElementById('am_lorebook_name');
     const core = document.getElementById('am_core_categories');
     const depth = document.getElementById('am_scan_depth');
     if (el) el.checked = s.enabled;
     if (dbg) dbg.checked = s.debug;
-    if (name) name.value = s.lorebookName;
     if (core) core.value = s.coreCategories;
     if (depth) depth.value = s.scanDepth;
     const keep = document.getElementById('am_keep_blocks');

@@ -9,7 +9,6 @@ export const LOG_PREFIX = '[AutoMemory]';
 const defaults = Object.freeze({
     enabled: true,
     debug: false,
-    lorebookName: 'БЛОКНОТ',   // название лорбука внутри мира персонажа
     coreCategories: '',        // категории-ядро через запятую: уезжают в контекст всегда
     scanDepth: 2,              // сколько последних сообщений сканировать на «Ключи:»
     keepBlocks: false,         // не вырезать блоки <memory> из видимого текста

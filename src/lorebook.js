@@ -13,8 +13,7 @@ import { looksLikeNotebook } from './notebook.js';
 
 export const PROBLEM = {
     NO_CHARACTER: 'no_character',
-    NO_WORLD: 'no_world',
-    WORLD_MISSING: 'world_missing',
+    NO_BINDING: 'no_binding',
     NO_LOREBOOK: 'no_lorebook',
     FOREIGN: 'foreign',
 };
@@ -46,27 +45,28 @@ export function resolveCharacter(ctx, messageIndex) {
  * Чужие, чатовые и глобальные миры не смотрим: лорбук принадлежит персонажу.
  * @returns {{worlds: string[], problem: string|null, character: object|null}}
  */
-export function resolveWorlds(ctx, messageIndex, bindings = {}) {
+/** Связка из таблицы: строка (старый вид, только мир) или {world, lorebook}. */
+export function bindingOf(bindings, avatar) {
+    const b = bindings?.[avatar];
+    if (!b) return null;
+    if (typeof b === 'string') return { world: b, lorebook: '' };
+    return { world: b.world || '', lorebook: b.lorebook || '' };
+}
+
+/**
+ * Цель записи для персонажа сообщения: мир и лорбук из таблицы связок.
+ * Без связки писать некуда — привязки таверны не читаем, имена не угадываем.
+ * @returns {{world: string|null, lorebook: string|null, problem: string|null, character: object|null}}
+ */
+export function resolveTarget(ctx, messageIndex, bindings = {}) {
     const character = resolveCharacter(ctx, messageIndex);
-    if (!character) return { worlds: [], problem: PROBLEM.NO_CHARACTER, character: null };
+    if (!character) return { world: null, lorebook: null, problem: PROBLEM.NO_CHARACTER, character: null };
 
-    const worlds = [];
-    const add = (w) => { if (w && !worlds.includes(w)) worlds.push(w); };
-    add(bindings?.[character.avatar]);            // связка из таблицы — главный путь
-    add(character.data?.extensions?.world);       // запасной: привязки таверны
-    for (const w of charExtraWorlds(character)) add(w);
-
-    if (!worlds.length) {
-        return { worlds: [], problem: PROBLEM.NO_WORLD, character };
+    const b = bindingOf(bindings, character.avatar);
+    if (!b || !b.world || !b.lorebook) {
+        return { world: null, lorebook: null, problem: PROBLEM.NO_BINDING, character };
     }
-
-    const known = typeof ctx.getWorldInfoNames === 'function' ? ctx.getWorldInfoNames() : [];
-    const existing = Array.isArray(known) && known.length ? worlds.filter(w => known.includes(w)) : worlds;
-    if (!existing.length) {
-        return { worlds, problem: PROBLEM.WORLD_MISSING, character };
-    }
-
-    return { worlds: existing, problem: null, character };
+    return { world: b.world, lorebook: b.lorebook, problem: null, character };
 }
 
 /** Дополнительные миры персонажа из world_info.charLore. */
@@ -167,12 +167,10 @@ export function describeProblem(problem, world, lorebookName) {
     switch (problem) {
         case PROBLEM.NO_CHARACTER:
             return 'не удалось определить персонажа, которому принадлежит сообщение';
-        case PROBLEM.NO_WORLD:
-            return `у персонажа «${world}» не найдено привязанных миров — ни основного, ни дополнительных`;
-        case PROBLEM.WORLD_MISSING:
-            return `миры персонажа «${world}» привязаны, но не найдены среди существующих`;
+        case PROBLEM.NO_BINDING:
+            return `для персонажа «${world}» нет связки в таблице — добавьте её в настройках AutoMemory`;
         case PROBLEM.NO_LOREBOOK:
-            return `лорбук «${lorebookName}» не найден в мирах: ${world} — добавлять некуда`;
+            return `лорбук «${lorebookName}» не найден в мире «${world}»`;
         case PROBLEM.FOREIGN:
             return `лорбук «${lorebookName}» не пуст, и это не наш формат — трогать его не будем`;
         default:

@@ -33,16 +33,6 @@
             </div>
 
             <div class="am-row">
-                <label for="am_lorebook_name">Название лорбука</label>
-                <input type="text" id="am_lorebook_name" class="text_pole" placeholder="БЛОКНОТ" />
-                <small class="am-hint">
-                    Имя любое — как назвали пустую запись в мире, так и впишите сюда.
-                    Регистр и скобки не важны; «[БЛОКНОТ SOL]» подходит под «БЛОКНОТ».
-                    Мир берётся из карточки персонажа, поле <b>World</b>.
-                </small>
-            </div>
-
-            <div class="am-row">
                 <label for="am_core_categories">Категории-ядро</label>
                 <input type="text" id="am_core_categories" class="text_pole" placeholder="META, ANALYTICS_NEK" />
                 <small class="am-hint">
@@ -61,16 +51,17 @@
             <hr class="am-divider" />
 
             <div class="am-row">
-                <label>Связки персонаж → мир</label>
+                <label>Связки персонаж → мир → лорбук</label>
                 <div id="am_bindings"></div>
                 <div class="am-bind-add">
                     <select id="am_bind_char" class="text_pole"></select>
                     <select id="am_bind_world" class="text_pole"></select>
+                    <select id="am_bind_lorebook" class="text_pole"></select>
                     <button id="am_bind_add" class="menu_button">Добавить</button>
                 </div>
                 <small class="am-hint">
-                    Куда пишет блокнот каждого персонажа. Связка из таблицы главнее
-                    привязок таверны; нет связки — берётся мир из карточки.
+                    Куда пишет блокнот каждого персонажа: мир и лорбук в нём.
+                    Без связки запись не сохраняется.
                 </small>
             </div>
 
