@@ -10,7 +10,7 @@ import { getStringHash } from '../../../utils.js';
 import { MODULE_NAME, LOG_PREFIX, getSettings, saveSettings, log } from './src/settings.js';
 import { extractBlocks } from './src/parse.js';
 import { parseNotebook, renderNotebook, appendRecord, resolveRefine } from './src/notebook.js';
-import { resolveWorlds, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
+import { resolveWorlds, resolveCharacter, charExtraWorlds, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
 import { buildInjection, runQuery } from './src/delivery.js';
 
 const EXTENSION_PATH = decodeURIComponent(new URL('.', import.meta.url).pathname)
@@ -254,6 +254,50 @@ function registerNoteTool(ctx) {
     log('инструмент note_show зарегистрирован');
 }
 
+/** Диагностика связки по кнопке: персонаж → миры → лорбук. Печатает в панель. */
+async function runDiagnostics() {
+    const s = getSettings();
+    const ctx = SillyTavern.getContext();
+    const out = [];
+    try {
+        const character = resolveCharacter(ctx, -1);
+        if (!character) {
+            out.push('персонаж: НЕ ОПРЕДЕЛЁН (characterId=' + String(ctx.characterId) + ')');
+        } else {
+            out.push('персонаж: ' + String(character.name) + ' (' + String(character.avatar) + ')');
+            out.push('основной мир в карточке: ' + (character.data?.extensions?.world || '— пусто —'));
+            const extra = charExtraWorlds(character);
+            out.push('дополнительные миры: ' + (extra.length ? extra.join(', ') : '— нет —'));
+            if (character.data?.character_book) out.push('встроенный в карточку мир: есть (не файл World Info)');
+        }
+        const known = typeof ctx.getWorldInfoNames === 'function' ? ctx.getWorldInfoNames() : [];
+        out.push('миров в системе: ' + known.length + (known.length ? ' — ' + known.slice(0, 6).join(', ') : ''));
+
+        const { worlds, problem } = resolveWorlds(ctx, -1);
+        if (problem) {
+            out.push('итог: ' + describeProblem(problem, character?.name ?? '?', s.lorebookName));
+        } else {
+            out.push('ищу лорбук «' + s.lorebookName + '» в: ' + worlds.join(', '));
+            const nb = await readNotebook(ctx, worlds, s.lorebookName);
+            if (nb.problem) {
+                out.push('итог: ' + describeProblem(nb.problem, worlds.join('», «'), s.lorebookName));
+                for (const w of worlds) {
+                    const d = await ctx.loadWorldInfo(w);
+                    const names = Object.values(d?.entries ?? {}).filter(Boolean)
+                        .map(e => String(e.comment ?? '').trim() || '(без названия)');
+                    out.push('записи в «' + w + '»: ' + (names.length ? names.join(' | ') : '— пусто —'));
+                }
+            } else {
+                out.push('итог: лорбук найден в «' + nb.world + '», записей внутри: '
+                    + (nb.content.trim() ? 'есть содержимое' : 'пусто, готов к первой записи'));
+            }
+        }
+    } catch (e) {
+        out.push('ошибка диагностики: ' + String(e?.message ?? e));
+    }
+    setPanelStatus(out.join(String.fromCharCode(10)));
+}
+
 // ─── Панель настроек ─────────────────────────────────────────────────
 
 function bindUI() {
@@ -278,6 +322,8 @@ function bindUI() {
             saveSettings();
         });
     }
+    const chk = document.getElementById('am_check');
+    if (chk) chk.addEventListener('click', runDiagnostics);
     const name = document.getElementById('am_lorebook_name');
     if (name) {
         name.addEventListener('input', (e) => {

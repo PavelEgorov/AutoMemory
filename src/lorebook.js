@@ -55,14 +55,8 @@ export function resolveWorlds(ctx, messageIndex) {
     const primary = character.data?.extensions?.world || '';
     if (primary) worlds.push(primary);
 
-    try {
-        const fileName = String(character.avatar ?? '').replace(/\.[^/.]+$/, '');
-        const extra = world_info?.charLore?.find(e => e.name === fileName)?.extraBooks;
-        if (Array.isArray(extra)) {
-            for (const w of extra) if (w && !worlds.includes(w)) worlds.push(w);
-        }
-    } catch (e) {
-        console.warn('[AutoMemory] не удалось прочитать дополнительные миры:', e);
+    for (const w of charExtraWorlds(character)) {
+        if (!worlds.includes(w)) worlds.push(w);
     }
 
     if (!worlds.length) {
@@ -77,6 +71,18 @@ export function resolveWorlds(ctx, messageIndex) {
     }
 
     return { worlds: existing, problem: null, character };
+}
+
+/** Дополнительные миры персонажа из world_info.charLore. */
+export function charExtraWorlds(character) {
+    try {
+        const fileName = String(character?.avatar ?? '').replace(/\.[^/.]+$/, '');
+        const extra = world_info?.charLore?.find(e => e.name === fileName)?.extraBooks;
+        return Array.isArray(extra) ? extra.filter(Boolean) : [];
+    } catch (e) {
+        console.warn('[AutoMemory] не удалось прочитать дополнительные миры:', e);
+        return [];
+    }
 }
 
 /** «[БЛОКНОТ SOL]» и «блокнот sol» считаются одним названием. */

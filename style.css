@@ -33,4 +33,5 @@
     font-size: 0.9em;
     opacity: 0.85;
     word-break: break-word;
+    white-space: pre-wrap;
 }
