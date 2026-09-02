@@ -379,7 +379,12 @@ function renderBindings() {
         charSel.textContent = '';
         for (const c of chars) {
             if (!c?.avatar) continue;
-            charSel.append(new Option(c.name ?? c.avatar, c.avatar));
+            // цветом option в системном списке Android не выделить — метим текстом
+            const isCur = current && c.avatar === current.avatar;
+            const label = (isCur ? '★ ' : '') + (c.name ?? c.avatar) + (isCur ? ' — текущий' : '');
+            const opt = new Option(label, c.avatar);
+            if (isCur) opt.selected = true;
+            charSel.append(opt);
         }
         worldSel.textContent = '';
         worldSel.append(new Option('— мир —', ''));
@@ -440,7 +445,7 @@ function bindBindingsUI() {
         s.bindings[avatar] = { world, lorebook };
         saveSettings();
         renderBindings();
-        const charName = charSel?.selectedOptions?.[0]?.textContent ?? avatar;
+        const charName = ch?.name ?? avatar;
         setPanelStatus('связка сохранена: ' + charName + ' → ' + world + ' / ' + lorebook);
     });
 }
