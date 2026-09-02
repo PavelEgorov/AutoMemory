@@ -58,7 +58,7 @@ async function onGenerationStarted(type, _params, dryRun) {
     const ctx = SillyTavern.getContext();
     // characterId к этому моменту указывает на говорящего и в группе:
     // setCharacterId(chId) в group-chats.js вызывается до генерации участника
-    const { worlds, problem } = resolveWorlds(ctx, -1);
+    const { worlds, problem } = resolveWorlds(ctx, -1, s.bindings);
     if (problem) return inject('');
 
     const { content, problem: p2 } = await readNotebook(ctx, worlds, s.lorebookName);
@@ -122,7 +122,7 @@ async function onMessageReceived(messageIndex) {
     }
 
     // Куда писать: миры персонажа (основной и дополнительные), лорбук по названию
-    const { worlds, problem: worldProblem, character } = resolveWorlds(ctx, messageIndex);
+    const { worlds, problem: worldProblem, character } = resolveWorlds(ctx, messageIndex, s.bindings);
     if (worldProblem) {
         cleanup();
         return refuse(describeProblem(worldProblem, character?.name ?? '?', s.lorebookName));
@@ -238,7 +238,7 @@ function registerNoteTool(ctx) {
             if (!s.enabled) return 'AutoMemory выключено.';
 
             const c = SillyTavern.getContext();
-            const { worlds, problem, character } = resolveWorlds(c, -1);
+            const { worlds, problem, character } = resolveWorlds(c, -1, s.bindings);
             if (problem) return 'Блокнот недоступен: ' + describeProblem(problem, character?.name ?? '?', s.lorebookName);
 
             const nb = await readNotebook(c, worlds, s.lorebookName);
@@ -273,13 +273,14 @@ async function runDiagnostics() {
             out.push('основной мир в карточке: ' + (character.data?.extensions?.world || '— пусто —'));
             const extra = charExtraWorlds(character);
             out.push('дополнительные миры: ' + (extra.length ? extra.join(', ') : '— нет —'));
+            out.push('связка из таблицы: ' + (s.bindings?.[character.avatar] ?? '— нет —'));
             for (const line of bindingSnapshot(ctx, character)) out.push(line);
             if (character.data?.character_book) out.push('встроенный в карточку мир: есть (не файл World Info)');
         }
         const known = typeof ctx.getWorldInfoNames === 'function' ? ctx.getWorldInfoNames() : [];
         out.push('миров в системе: ' + known.length + (known.length ? ' — ' + known.slice(0, 6).join(', ') : ''));
 
-        const { worlds, problem } = resolveWorlds(ctx, -1);
+        const { worlds, problem } = resolveWorlds(ctx, -1, s.bindings);
         if (problem) {
             out.push('итог: ' + describeProblem(problem, character?.name ?? '?', s.lorebookName));
             setPanelStatus(out.join(String.fromCharCode(10)));
@@ -303,6 +304,65 @@ async function runDiagnostics() {
         out.push('ошибка диагностики: ' + String(e?.message ?? e));
     }
     setPanelStatus(out.join(String.fromCharCode(10)));
+}
+
+// ─── Таблица связок персонаж → мир ───────────────────────────────────
+
+function renderBindings() {
+    const box = document.getElementById('am_bindings');
+    if (!box) return;
+    const ctx = SillyTavern.getContext();
+    const s = getSettings();
+    const chars = Array.isArray(ctx.characters) ? ctx.characters : [];
+    const nameOf = (avatar) => chars.find(c => c?.avatar === avatar)?.name ?? avatar;
+
+    box.textContent = '';
+    for (const [avatar, world] of Object.entries(s.bindings ?? {})) {
+        const row = document.createElement('div');
+        row.className = 'am-bind-row';
+        const label = document.createElement('span');
+        label.textContent = nameOf(avatar) + ' → ' + world;
+        const del = document.createElement('button');
+        del.className = 'menu_button am-bind-del';
+        del.textContent = '✕';
+        del.addEventListener('click', () => {
+            delete getSettings().bindings[avatar];
+            saveSettings();
+            renderBindings();
+        });
+        row.append(label, del);
+        box.append(row);
+    }
+
+    const charSel = document.getElementById('am_bind_char');
+    const worldSel = document.getElementById('am_bind_world');
+    if (charSel && worldSel) {
+        charSel.textContent = '';
+        for (const c of chars) {
+            if (!c?.avatar) continue;
+            charSel.append(new Option(c.name ?? c.avatar, c.avatar));
+        }
+        worldSel.textContent = '';
+        const worlds = typeof ctx.getWorldInfoNames === 'function' ? ctx.getWorldInfoNames() : [];
+        for (const w of worlds) worldSel.append(new Option(w, w));
+    }
+}
+
+function bindBindingsUI() {
+    const addBtn = document.getElementById('am_bind_add');
+    if (!addBtn) return;
+    addBtn.addEventListener('click', () => {
+        const charSel = document.getElementById('am_bind_char');
+        const worldSel = document.getElementById('am_bind_world');
+        const avatar = charSel?.value;
+        const world = worldSel?.value;
+        if (!avatar || !world) return;
+        const s = getSettings();
+        if (!s.bindings || typeof s.bindings !== 'object') s.bindings = {};
+        s.bindings[avatar] = world;
+        saveSettings();
+        renderBindings();
+    });
 }
 
 // ─── Панель настроек ─────────────────────────────────────────────────
@@ -331,6 +391,7 @@ function bindUI() {
     }
     const chk = document.getElementById('am_check');
     if (chk) chk.addEventListener('click', runDiagnostics);
+    bindBindingsUI();
     const name = document.getElementById('am_lorebook_name');
     if (name) {
         name.addEventListener('input', (e) => {
@@ -396,6 +457,7 @@ function updateUI() {
 
     eventSource.on(event_types.APP_READY, () => {
         updateUI();
+        renderBindings();
         console.log(LOG_PREFIX, 'загружено:', EXTENSION_PATH);
     });
 })();

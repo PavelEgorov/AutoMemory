@@ -35,3 +35,28 @@
     word-break: break-word;
     white-space: pre-wrap;
 }
+
+.am-settings .am-bind-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 0;
+}
+
+.am-settings .am-bind-del {
+    min-width: 2em;
+    padding: 2px 6px;
+}
+
+.am-settings .am-bind-add {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.am-settings .am-bind-add select {
+    flex: 1;
+    min-width: 8em;
+}

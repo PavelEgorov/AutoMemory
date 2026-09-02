@@ -46,13 +46,14 @@ export function resolveCharacter(ctx, messageIndex) {
  * Чужие, чатовые и глобальные миры не смотрим: лорбук принадлежит персонажу.
  * @returns {{worlds: string[], problem: string|null, character: object|null}}
  */
-export function resolveWorlds(ctx, messageIndex) {
+export function resolveWorlds(ctx, messageIndex, bindings = {}) {
     const character = resolveCharacter(ctx, messageIndex);
     if (!character) return { worlds: [], problem: PROBLEM.NO_CHARACTER, character: null };
 
     const worlds = [];
     const add = (w) => { if (w && !worlds.includes(w)) worlds.push(w); };
-    add(character.data?.extensions?.world);
+    add(bindings?.[character.avatar]);            // связка из таблицы — главный путь
+    add(character.data?.extensions?.world);       // запасной: привязки таверны
     for (const w of charExtraWorlds(character)) add(w);
 
     if (!worlds.length) {
