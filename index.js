@@ -61,7 +61,7 @@ async function onGenerationStarted(type, _params, dryRun) {
     const t = resolveTarget(ctx, -1, s.bindings);
     if (t.problem) return inject('');
 
-    const { content, problem: p2 } = await readNotebook(ctx, [t.world], t.lorebook);
+    const { content, problem: p2 } = await readNotebook(ctx, t.world, t.lorebook);
     if (p2) return inject('');
 
     const recentText = (ctx.chat ?? [])
@@ -128,12 +128,12 @@ async function onMessageReceived(messageIndex) {
         return refuse(describeProblem(t.problem, t.character?.name ?? '?', ''));
     }
 
-    const nb = await readNotebook(ctx, [t.world], t.lorebook);
+    const nb = await readNotebook(ctx, t.world, t.lorebook);
     if (nb.problem) {
         cleanup();
         return refuse(describeProblem(nb.problem, t.world, t.lorebook));
     }
-    const { world, data, entry, content } = nb;
+    const { data, entry, content } = nb;
 
     // Пишем
     const model = parseNotebook(content);
@@ -151,7 +151,7 @@ async function onMessageReceived(messageIndex) {
     const next = renderNotebook(model);
 
     try {
-        await writeNotebook(ctx, world, data, entry, next);
+        await writeNotebook(ctx, t.world, data, entry, next);
     } catch (e) {
         console.error(LOG_PREFIX, 'не удалось сохранить лорбук:', e);
         cleanup();
@@ -241,7 +241,7 @@ function registerNoteTool(ctx) {
             const t = resolveTarget(c, -1, s.bindings);
             if (t.problem) return 'Блокнот недоступен: ' + describeProblem(t.problem, t.character?.name ?? '?', '');
 
-            const nb = await readNotebook(c, [t.world], t.lorebook);
+            const nb = await readNotebook(c, t.world, t.lorebook);
             if (nb.problem) return 'Блокнот недоступен: ' + describeProblem(nb.problem, t.world, t.lorebook);
 
             const result = runQuery(nb.content, args?.filter ?? '');
@@ -288,7 +288,7 @@ async function runDiagnostics() {
             return;
         }
         out.push('цель: мир «' + t.world + '», лорбук «' + t.lorebook + '»');
-        const nb = await readNotebook(ctx, [t.world], t.lorebook);
+        const nb = await readNotebook(ctx, t.world, t.lorebook);
         if (nb.problem) {
             out.push('итог: ' + describeProblem(nb.problem, t.world, t.lorebook));
             const d = await ctx.loadWorldInfo(t.world);
@@ -296,7 +296,7 @@ async function runDiagnostics() {
                 .map(e => String(e.comment ?? '').trim() || '(без названия)');
             out.push('записи в «' + t.world + '»: ' + (names.length ? names.join(' | ') : '— пусто —'));
         } else {
-            out.push('итог: лорбук найден в «' + nb.world + '», '
+            out.push('итог: лорбук найден в «' + t.world + '», '
                 + (nb.content.trim() ? 'есть содержимое' : 'пуст, готов к первой записи'));
         }
     } catch (e) {

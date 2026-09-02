@@ -111,41 +111,36 @@ function normalizeName(s) {
 }
 
 /**
- * Находит лорбук по названию в мирах (по порядку). Пустой лорбук годится —
+ * Находит лорбук по названию в заданном мире. Пустой лорбук годится —
  * начнём с чистого листа. Наш формат — работаем с сохранённым. Чужое не трогаем.
- * Во всех исходах возвращается world — имя мира, к которому относится итог.
- * @returns {Promise<{world: string|null, data: object|null, entry: object|null, content: string, problem: string|null}>}
+ * @returns {Promise<{data: object|null, entry: object|null, content: string, problem: string|null}>}
  */
-export async function readNotebook(ctx, worlds, lorebookName) {
+export async function readNotebook(ctx, world, lorebookName) {
     const name = normalizeName(lorebookName);
-    const list = (Array.isArray(worlds) ? worlds : [worlds]).filter(Boolean);
-    if (!name || !list.length) {
-        return { world: list[0] ?? null, data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
+    if (!name || !world) {
+        return { data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
     }
 
-    let foreign = null;
-    for (const world of list) {
-        const data = await ctx.loadWorldInfo(world);
-        if (!data || !data.entries) continue;
-
-        // точное совпадение названия важнее совпадения по началу
-        const all = Object.values(data.entries).filter(Boolean);
-        const entry =
-            all.find(e => normalizeName(e.comment) === name) ??
-            all.find(e => normalizeName(e.comment).startsWith(name));
-        if (!entry) continue;
-
-        const content = String(entry.content ?? '');
-        if (!looksLikeNotebook(content)) {
-            foreign = { world, data, entry, content, problem: PROBLEM.FOREIGN };
-            continue;
-        }
-
-        return { world, data, entry, content, problem: null };
+    const data = await ctx.loadWorldInfo(world);
+    if (!data || !data.entries) {
+        return { data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
     }
 
-    if (foreign) return foreign;
-    return { world: list[0], data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
+    // точное совпадение названия важнее совпадения по началу
+    const all = Object.values(data.entries).filter(Boolean);
+    const entry =
+        all.find(e => normalizeName(e.comment) === name) ??
+        all.find(e => normalizeName(e.comment).startsWith(name));
+    if (!entry) {
+        return { data, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
+    }
+
+    const content = String(entry.content ?? '');
+    if (!looksLikeNotebook(content)) {
+        return { data, entry, content, problem: PROBLEM.FOREIGN };
+    }
+
+    return { data, entry, content, problem: null };
 }
 
 /**
