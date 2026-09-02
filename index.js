@@ -234,6 +234,50 @@ function onToolCallsRendered(invocations) {
     }
 }
 
+// ─── Экономное продолжение после note_show ───────────────────────────
+
+/** Сколько последних сообщений диалога остаётся во втором проходе. */
+const TRIM_KEEP = 6;
+
+/**
+ * Второй проход после вызова инструмента везёт весь промпт заново — цена механизма:
+ * у модели нет памяти между запросами, дослать токены в идущую генерацию нельзя.
+ * С галкой «экономное продолжение» режем повтор перед самой отправкой: остаются
+ * системные части (карточка, инструкции, наша инъекция), хвост диалога и сам вызов
+ * с результатом. Пары «вызов → результат» не рвём — API требует их вместе.
+ */
+function onPromptReady(eventData) {
+    try {
+        const s = getSettings();
+        if (!s.enabled || !s.trimToolPass || eventData?.dryRun) return;
+        const chat = eventData?.chat;
+        if (!Array.isArray(chat)) return;
+
+        const callMsgs = chat.filter(m => Array.isArray(m?.tool_calls));
+        if (!callMsgs.length) return;
+        // режем только свои вызовы: чужие инструменты — не наше дело
+        if (!callMsgs.every(m => m.tool_calls.every(tc => tc?.function?.name === 'note_show'))) return;
+
+        const firstTool = chat.findIndex(m => Array.isArray(m?.tool_calls) || m?.role === 'tool');
+        const head = chat.slice(0, firstTool);
+        const toolChain = chat.slice(firstTool);
+        const systems = head.filter(m => m?.role === 'system');
+        const dialog = head.filter(m => m?.role !== 'system');
+        if (dialog.length <= TRIM_KEEP) return;
+
+        // хвост диалога; тянем вверх до реплики человека, чтобы не начинать с ответа
+        let from = dialog.length - TRIM_KEEP;
+        while (from > 0 && dialog[from]?.role !== 'user' && dialog.length - from < TRIM_KEEP + 4) from--;
+
+        const before = chat.length;
+        chat.length = 0;
+        chat.push(...systems, ...dialog.slice(from), ...toolChain);
+        log('экономное продолжение: сообщений', before, '->', chat.length);
+    } catch (e) {
+        log('экономное продолжение не удалось:', e);
+    }
+}
+
 // ─── Инструмент note_show ────────────────────────────────────────────
 
 /**
@@ -474,6 +518,13 @@ function bindUI() {
             saveSettings();
         });
     }
+    const trim = document.getElementById('am_trim_tool');
+    if (trim) {
+        trim.addEventListener('change', (e) => {
+            getSettings().trimToolPass = e.target.checked;
+            saveSettings();
+        });
+    }
     const chk = document.getElementById('am_check');
     if (chk) chk.addEventListener('click', runDiagnostics);
     bindBindingsUI();
@@ -505,6 +556,8 @@ function updateUI() {
     if (depth) depth.value = s.scanDepth;
     const keep = document.getElementById('am_keep_blocks');
     if (keep) keep.checked = s.keepBlocks;
+    const trim = document.getElementById('am_trim_tool');
+    if (trim) trim.checked = s.trimToolPass;
     const st = document.getElementById('am_status');
     if (st) st.textContent = lastStatus;
 }
@@ -530,6 +583,7 @@ function updateUI() {
     eventSource.on(event_types.MESSAGE_RECEIVED, onMessageReceived);
     eventSource.on(event_types.GENERATION_STARTED, onGenerationStarted);
     eventSource.on(event_types.TOOL_CALLS_RENDERED, onToolCallsRendered);
+    eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
     eventSource.on(event_types.CHAT_CHANGED, () => {
         inject('');
         renderBindings(); // подсветка текущего персонажа следует за открытым чатом
