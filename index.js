@@ -387,15 +387,20 @@ function bindBindingsUI() {
     const addBtn = document.getElementById('am_bind_add');
     if (!addBtn) return;
     addBtn.addEventListener('click', () => {
-        const avatar = document.getElementById('am_bind_char')?.value;
+        const charSel = document.getElementById('am_bind_char');
+        const avatar = charSel?.value;
         const world = document.getElementById('am_bind_world')?.value;
         const lorebook = document.getElementById('am_bind_lorebook')?.value;
-        if (!avatar || !world || !lorebook) return;
+        if (!avatar) return setPanelStatus('связка не сохранена: не выбран персонаж');
+        if (!world) return setPanelStatus('связка не сохранена: не выбран мир');
+        if (!lorebook) return setPanelStatus('связка не сохранена: не выбран лорбук (третий список)');
         const s = getSettings();
         if (!s.bindings || typeof s.bindings !== 'object') s.bindings = {};
         s.bindings[avatar] = { world, lorebook };
         saveSettings();
         renderBindings();
+        const charName = charSel?.selectedOptions?.[0]?.textContent ?? avatar;
+        setPanelStatus('связка сохранена: ' + charName + ' → ' + world + ' / ' + lorebook);
     });
 }
 
