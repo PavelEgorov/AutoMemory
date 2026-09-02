@@ -10,7 +10,7 @@ import { getStringHash } from '../../../utils.js';
 import { MODULE_NAME, LOG_PREFIX, getSettings, saveSettings, log } from './src/settings.js';
 import { extractBlocks } from './src/parse.js';
 import { parseNotebook, renderNotebook, appendRecord, resolveRefine } from './src/notebook.js';
-import { resolveWorld, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
+import { resolveWorlds, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
 import { buildInjection, runQuery } from './src/delivery.js';
 
 const EXTENSION_PATH = decodeURIComponent(new URL('.', import.meta.url).pathname)
@@ -58,10 +58,10 @@ async function onGenerationStarted(type, _params, dryRun) {
     const ctx = SillyTavern.getContext();
     // characterId к этому моменту указывает на говорящего и в группе:
     // setCharacterId(chId) в group-chats.js вызывается до генерации участника
-    const { world, problem } = resolveWorld(ctx, -1);
+    const { worlds, problem } = resolveWorlds(ctx, -1);
     if (problem) return inject('');
 
-    const { content, problem: p2 } = await readNotebook(ctx, world, s.lorebookName);
+    const { content, problem: p2 } = await readNotebook(ctx, worlds, s.lorebookName);
     if (p2) return inject('');
 
     const recentText = (ctx.chat ?? [])
@@ -121,18 +121,19 @@ async function onMessageReceived(messageIndex) {
         return report([], bad, [], truncatedNote);
     }
 
-    // Куда писать: мир из карточки, лорбук по названию из настроек
-    const { world, problem: worldProblem } = resolveWorld(ctx, messageIndex);
+    // Куда писать: миры персонажа (основной и дополнительные), лорбук по названию
+    const { worlds, problem: worldProblem, character } = resolveWorlds(ctx, messageIndex);
     if (worldProblem) {
         cleanup();
-        return refuse(describeProblem(worldProblem, world, s.lorebookName));
+        return refuse(describeProblem(worldProblem, character?.name ?? '?', s.lorebookName));
     }
 
-    const { data, entry, content, problem } = await readNotebook(ctx, world, s.lorebookName);
-    if (problem) {
+    const nb = await readNotebook(ctx, worlds, s.lorebookName);
+    if (nb.problem) {
         cleanup();
-        return refuse(describeProblem(problem, world, s.lorebookName));
+        return refuse(describeProblem(nb.problem, worlds.join('», «'), s.lorebookName));
     }
+    const { world, data, entry, content } = nb;
 
     // Пишем
     const model = parseNotebook(content);
@@ -237,11 +238,11 @@ function registerNoteTool(ctx) {
             if (!s.enabled) return 'AutoMemory выключено.';
 
             const c = SillyTavern.getContext();
-            const { world, problem } = resolveWorld(c, -1);
-            if (problem) return 'Блокнот недоступен: ' + describeProblem(problem, world, s.lorebookName);
+            const { worlds, problem, character } = resolveWorlds(c, -1);
+            if (problem) return 'Блокнот недоступен: ' + describeProblem(problem, character?.name ?? '?', s.lorebookName);
 
-            const nb = await readNotebook(c, world, s.lorebookName);
-            if (nb.problem) return 'Блокнот недоступен: ' + describeProblem(nb.problem, world, s.lorebookName);
+            const nb = await readNotebook(c, worlds, s.lorebookName);
+            if (nb.problem) return 'Блокнот недоступен: ' + describeProblem(nb.problem, worlds.join('», «'), s.lorebookName);
 
             const result = runQuery(nb.content, args?.filter ?? '');
             log('note_show:', args?.filter || '(весь блокнот)', '->', result.length, 'симв.');

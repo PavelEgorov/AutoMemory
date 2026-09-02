@@ -8,7 +8,7 @@
  * Путь импорта: файл лежит в third-party/<папка>/src/, до scripts/ — четыре уровня вверх.
  */
 
-import { setWIOriginalDataValue, originalWIDataKeyMap } from '../../../../world-info.js';
+import { setWIOriginalDataValue, originalWIDataKeyMap, world_info } from '../../../../world-info.js';
 import { looksLikeNotebook } from './notebook.js';
 
 export const PROBLEM = {
@@ -42,25 +42,41 @@ export function resolveCharacter(ctx, messageIndex) {
 }
 
 /**
- * Мир, привязанный к карточке персонажа. Чистое чтение, ничего не создаёт.
- * @returns {{world: string|null, problem: string|null, character: object|null}}
+ * Миры, привязанные к персонажу: основной из карточки и дополнительные
+ * (кнопка-глобус, выбор «Additional» — хранятся в world_info.charLore).
+ * Чистое чтение, ничего не создаёт.
+ * @returns {{worlds: string[], problem: string|null, character: object|null}}
  */
-export function resolveWorld(ctx, messageIndex) {
+export function resolveWorlds(ctx, messageIndex) {
     const character = resolveCharacter(ctx, messageIndex);
-    if (!character) return { world: null, problem: PROBLEM.NO_CHARACTER, character: null };
+    if (!character) return { worlds: [], problem: PROBLEM.NO_CHARACTER, character: null };
 
-    const world = character.data?.extensions?.world || '';
-    if (!world) {
+    const worlds = [];
+    const primary = character.data?.extensions?.world || '';
+    if (primary) worlds.push(primary);
+
+    try {
+        const fileName = String(character.avatar ?? '').replace(/\.[^/.]+$/, '');
+        const extra = world_info?.charLore?.find(e => e.name === fileName)?.extraBooks;
+        if (Array.isArray(extra)) {
+            for (const w of extra) if (w && !worlds.includes(w)) worlds.push(w);
+        }
+    } catch (e) {
+        console.warn('[AutoMemory] не удалось прочитать дополнительные миры:', e);
+    }
+
+    if (!worlds.length) {
         const problem = character.data?.character_book ? PROBLEM.EMBEDDED_ONLY : PROBLEM.NO_WORLD;
-        return { world: null, problem, character };
+        return { worlds: [], problem, character };
     }
 
     const known = typeof ctx.getWorldInfoNames === 'function' ? ctx.getWorldInfoNames() : [];
-    if (Array.isArray(known) && known.length && !known.includes(world)) {
-        return { world, problem: PROBLEM.WORLD_MISSING, character };
+    const existing = Array.isArray(known) && known.length ? worlds.filter(w => known.includes(w)) : worlds;
+    if (!existing.length) {
+        return { worlds, problem: PROBLEM.WORLD_MISSING, character };
     }
 
-    return { world, problem: null, character };
+    return { worlds: existing, problem: null, character };
 }
 
 /** «[БЛОКНОТ SOL]» и «блокнот sol» считаются одним названием. */
@@ -126,13 +142,13 @@ export function describeProblem(problem, world, lorebookName) {
         case PROBLEM.NO_CHARACTER:
             return 'не удалось определить персонажа, которому принадлежит сообщение';
         case PROBLEM.NO_WORLD:
-            return 'к карточке персонажа не привязан мир (поле World в карточке)';
+            return `у персонажа «${world}» не найдено привязанных миров — ни основного, ни дополнительных`;
         case PROBLEM.WORLD_MISSING:
-            return `мир «${world}» привязан к карточке, но не найден`;
+            return `миры персонажа «${world}» привязаны, но не найдены среди существующих`;
         case PROBLEM.EMBEDDED_ONLY:
             return 'у персонажа только встроенный в карточку мир — его нужно импортировать в World Info';
         case PROBLEM.NO_LOREBOOK:
-            return 'лорбук не найден — добавлять некуда';
+            return `лорбук «${lorebookName}» не найден в мирах: ${world} — добавлять некуда`;
         case PROBLEM.FOREIGN:
             return `лорбук «${lorebookName}» не пуст, и это не наш формат — трогать его не будем`;
         default:
