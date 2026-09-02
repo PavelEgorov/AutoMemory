@@ -105,18 +105,13 @@ export function bindingSnapshot(ctx, character) {
     return out;
 }
 
-/** «[БЛОКНОТ SOL]» и «блокнот sol» считаются одним названием. */
-function normalizeName(s) {
-    return String(s ?? '').trim().replace(/^\[|\]$/g, '').trim().toLowerCase();
-}
-
 /**
  * Находит лорбук по названию в заданном мире. Пустой лорбук годится —
  * начнём с чистого листа. Наш формат — работаем с сохранённым. Чужое не трогаем.
  * @returns {Promise<{data: object|null, entry: object|null, content: string, problem: string|null}>}
  */
 export async function readNotebook(ctx, world, lorebookName) {
-    const name = normalizeName(lorebookName);
+    const name = String(lorebookName ?? '').trim();
     if (!name || !world) {
         return { data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
     }
@@ -126,11 +121,9 @@ export async function readNotebook(ctx, world, lorebookName) {
         return { data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
     }
 
-    // точное совпадение названия важнее совпадения по началу
-    const all = Object.values(data.entries).filter(Boolean);
-    const entry =
-        all.find(e => normalizeName(e.comment) === name) ??
-        all.find(e => normalizeName(e.comment).startsWith(name));
+    // название приходит из выпадающего списка — совпадение точное, по строке
+    const entry = Object.values(data.entries).filter(Boolean)
+        .find(e => String(e.comment ?? '').trim() === name);
     if (!entry) {
         return { data, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
     }
