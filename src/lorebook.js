@@ -15,7 +15,6 @@ export const PROBLEM = {
     NO_CHARACTER: 'no_character',
     NO_WORLD: 'no_world',
     WORLD_MISSING: 'world_missing',
-    EMBEDDED_ONLY: 'embedded_only',
     NO_LOREBOOK: 'no_lorebook',
     FOREIGN: 'foreign',
 };
@@ -42,9 +41,9 @@ export function resolveCharacter(ctx, messageIndex) {
 }
 
 /**
- * Миры, привязанные к персонажу: основной из карточки и дополнительные
+ * Миры конкретного персонажа: основной из карточки и дополнительные
  * (кнопка-глобус, выбор «Additional» — хранятся в world_info.charLore).
- * Чистое чтение, ничего не создаёт.
+ * Чужие, чатовые и глобальные миры не смотрим: лорбук принадлежит персонажу.
  * @returns {{worlds: string[], problem: string|null, character: object|null}}
  */
 export function resolveWorlds(ctx, messageIndex) {
@@ -52,16 +51,12 @@ export function resolveWorlds(ctx, messageIndex) {
     if (!character) return { worlds: [], problem: PROBLEM.NO_CHARACTER, character: null };
 
     const worlds = [];
-    const primary = character.data?.extensions?.world || '';
-    if (primary) worlds.push(primary);
-
-    for (const w of charExtraWorlds(character)) {
-        if (!worlds.includes(w)) worlds.push(w);
-    }
+    const add = (w) => { if (w && !worlds.includes(w)) worlds.push(w); };
+    add(character.data?.extensions?.world);
+    for (const w of charExtraWorlds(character)) add(w);
 
     if (!worlds.length) {
-        const problem = character.data?.character_book ? PROBLEM.EMBEDDED_ONLY : PROBLEM.NO_WORLD;
-        return { worlds: [], problem, character };
+        return { worlds: [], problem: PROBLEM.NO_WORLD, character };
     }
 
     const known = typeof ctx.getWorldInfoNames === 'function' ? ctx.getWorldInfoNames() : [];
@@ -151,8 +146,6 @@ export function describeProblem(problem, world, lorebookName) {
             return `у персонажа «${world}» не найдено привязанных миров — ни основного, ни дополнительных`;
         case PROBLEM.WORLD_MISSING:
             return `миры персонажа «${world}» привязаны, но не найдены среди существующих`;
-        case PROBLEM.EMBEDDED_ONLY:
-            return 'у персонажа только встроенный в карточку мир — его нужно импортировать в World Info';
         case PROBLEM.NO_LOREBOOK:
             return `лорбук «${lorebookName}» не найден в мирах: ${world} — добавлять некуда`;
         case PROBLEM.FOREIGN:

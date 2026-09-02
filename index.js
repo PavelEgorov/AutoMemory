@@ -276,21 +276,22 @@ async function runDiagnostics() {
         const { worlds, problem } = resolveWorlds(ctx, -1);
         if (problem) {
             out.push('итог: ' + describeProblem(problem, character?.name ?? '?', s.lorebookName));
-        } else {
-            out.push('ищу лорбук «' + s.lorebookName + '» в: ' + worlds.join(', '));
-            const nb = await readNotebook(ctx, worlds, s.lorebookName);
-            if (nb.problem) {
-                out.push('итог: ' + describeProblem(nb.problem, worlds.join('», «'), s.lorebookName));
-                for (const w of worlds) {
-                    const d = await ctx.loadWorldInfo(w);
-                    const names = Object.values(d?.entries ?? {}).filter(Boolean)
-                        .map(e => String(e.comment ?? '').trim() || '(без названия)');
-                    out.push('записи в «' + w + '»: ' + (names.length ? names.join(' | ') : '— пусто —'));
-                }
-            } else {
-                out.push('итог: лорбук найден в «' + nb.world + '», записей внутри: '
-                    + (nb.content.trim() ? 'есть содержимое' : 'пусто, готов к первой записи'));
+            setPanelStatus(out.join(String.fromCharCode(10)));
+            return;
+        }
+        out.push('миры персонажа: ' + worlds.join(' → '));
+        const nb = await readNotebook(ctx, worlds, s.lorebookName);
+        if (nb.problem) {
+            out.push('итог: ' + describeProblem(nb.problem, worlds.join('», «'), s.lorebookName));
+            for (const w of worlds) {
+                const d = await ctx.loadWorldInfo(w);
+                const names = Object.values(d?.entries ?? {}).filter(Boolean)
+                    .map(e => String(e.comment ?? '').trim() || '(без названия)');
+                out.push('записи в «' + w + '»: ' + (names.length ? names.join(' | ') : '— пусто —'));
             }
+        } else {
+            out.push('итог: лорбук найден в «' + nb.world + '», '
+                + (nb.content.trim() ? 'есть содержимое' : 'пуст, готов к первой записи'));
         }
     } catch (e) {
         out.push('ошибка диагностики: ' + String(e?.message ?? e));
