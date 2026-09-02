@@ -68,7 +68,7 @@ function sliceRecord(lines, model, markerAbs, ri) {
  * @param {{coreCategories?: string[], recentText?: string}} opts
  * @returns {string}
  */
-export function buildInjection(content, { coreCategories = [], recentText = '' } = {}) {
+export function buildInjection(content, { coreCategories = [], recentText = '', extraSlices = [] } = {}) {
     const glossary = glossarySlice(content);
     if (!glossary) return '';
 
@@ -78,12 +78,14 @@ export function buildInjection(content, { coreCategories = [], recentText = '' }
     const lines = String(content).split('\n');
 
     const picked = [];
+    const seen = new Set();
+    const push = (text) => { if (text && !seen.has(text)) { seen.add(text); picked.push(text); } };
     model.records.forEach((rec, ri) => {
         const isCore = rec.category && core.has(rec.category);
         if (!isCore && !keysMatch(rec, recentText)) return;
-        const text = sliceRecord(lines, model, markerAbs, ri);
-        if (text) picked.push(text);
+        push(sliceRecord(lines, model, markerAbs, ri));
     });
+    for (const t of extraSlices) push(t);
 
     return picked.length ? glossary + '\n' + picked.join('\n' + SEP + '\n') : glossary;
 }
@@ -113,15 +115,8 @@ export function parseQuery(query) {
     return out;
 }
 
-/**
- * Выполняет выборку над содержимым лорбука.
- * @returns {string} текст выборки; пусто, если ничего не нашлось
- */
-export function runQuery(content, query) {
-    const f = parseQuery(query);
-    if (f.glossary) return glossarySlice(content);
-    if (f.all) return String(content ?? '');
-
+/** Куски записей, подошедших под уже разобранный фильтр. */
+function collectSlices(content, f) {
     const model = parseNotebook(content);
     const markerAbs = markerLines(model);
     const lines = String(content).split('\n');
@@ -140,5 +135,61 @@ export function runQuery(content, query) {
         const text = sliceRecord(lines, model, markerAbs, ri);
         if (text) picked.push(text);
     });
-    return picked.join('\n' + SEP + '\n');
+    return picked;
+}
+
+/**
+ * Выполняет выборку над содержимым лорбука.
+ * @returns {string} текст выборки; пусто, если ничего не нашлось
+ */
+export function runQuery(content, query) {
+    const f = parseQuery(query);
+    if (f.glossary) return glossarySlice(content);
+    if (f.all) return String(content ?? '');
+    return collectSlices(content, f).join('\n' + SEP + '\n');
+}
+
+// ─── Рефлекс памяти ──────────────────────────────────────────────────
+
+/** Инструкция разведчику — короткий служебный промпт, по-английски. */
+const SCOUT_SYSTEM = [
+    "You are the character's memory reflex.",
+    'Before the character replies, decide what to recall from their notebook.',
+    'You see the notebook index (categories, tags) and the latest conversation.',
+    'Reply with recall filters, one query per line, three lines at most.',
+    'A query is a CATEGORY, a #tag, or their combination (combined as AND).',
+    'Pick only what is directly relevant to the current moment.',
+    'You cannot request the whole notebook.',
+    'If nothing is worth recalling, reply exactly: NONE',
+].join('\n');
+
+/** Промпт разведки: оглавление + хвост разговора. Карточки и истории здесь нет. */
+export function buildScoutPrompt(glossary, dialogue) {
+    return {
+        systemPrompt: SCOUT_SYSTEM,
+        prompt: 'NOTEBOOK INDEX:\n' + glossary + '\n\nCONVERSATION:\n' + dialogue + '\n\nRecall filters:',
+    };
+}
+
+/**
+ * Выполняет фильтры из ответа разведчика. Весь блокнот рефлексу недоступен:
+ * пустые запросы и «оглавление» пропускаются. Повторы записей убираются.
+ * @returns {string[]} куски записей
+ */
+export function reflexSlices(content, reply) {
+    const out = [];
+    const seen = new Set();
+    const lines = String(reply ?? '').split('\n')
+        .map(l => l.replace(/note_show/gi, ' ').replace(/[«»"'`()]/g, ' ').trim())
+        .filter(Boolean)
+        .slice(0, 3);
+    for (const line of lines) {
+        if (/^none\b/i.test(line)) continue;
+        const f = parseQuery(line);
+        if (f.all || f.glossary) continue; // весь блокнот рефлекс поднять не может
+        for (const text of collectSlices(content, f)) {
+            if (!seen.has(text)) { seen.add(text); out.push(text); }
+        }
+    }
+    return out;
 }

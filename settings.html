@@ -48,6 +48,25 @@
                 <small class="am-hint">Сколько последних сообщений проверяется на <code>Ключи:</code>.</small>
             </div>
 
+            <div class="am-row">
+                <label class="checkbox_label" for="am_reflex">
+                    <input type="checkbox" id="am_reflex" />
+                    <span>Рефлекс памяти</span>
+                </label>
+                <small class="am-hint">
+                    Перед ответом уходит короткая разведка (~1–2 тыс. токенов: оглавление
+                    и последние реплики, без карточки и истории) — модель сама решает,
+                    что поднять из блокнота, и выбранное ждёт её в контексте с первого
+                    токена ответа. Весь блокнот рефлексу недоступен.
+                </small>
+            </div>
+
+            <div class="am-row">
+                <label for="am_reflex_depth">Глубина рефлекса</label>
+                <input type="number" id="am_reflex_depth" class="text_pole" min="1" max="20" />
+                <small class="am-hint">Сколько последних реплик видит разведка.</small>
+            </div>
+
             <hr class="am-divider" />
 
             <div class="am-row">

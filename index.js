@@ -11,7 +11,7 @@ import { MODULE_NAME, LOG_PREFIX, getSettings, saveSettings, log } from './src/s
 import { extractBlocks } from './src/parse.js';
 import { parseNotebook, renderNotebook, appendRecord, resolveRefine } from './src/notebook.js';
 import { resolveTarget, resolveCharacter, charExtraWorlds, bindingOf, bindingSnapshot, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
-import { buildInjection, runQuery } from './src/delivery.js';
+import { buildInjection, runQuery, glossarySlice, buildScoutPrompt, reflexSlices } from './src/delivery.js';
 
 const EXTENSION_PATH = decodeURIComponent(new URL('.', import.meta.url).pathname)
     .replace(/\/$/, '').split('/').filter(Boolean).slice(-2).join('/');
@@ -71,7 +71,58 @@ async function onGenerationStarted(type, _params, dryRun) {
         .toLowerCase();
 
     const coreCategories = String(s.coreCategories ?? '').split(',');
-    inject(buildInjection(content, { coreCategories, recentText }));
+
+    // Рефлекс памяти: до сборки промпта модель сама решает, что поднять из блокнота
+    let extraSlices = [];
+    if (s.reflex) {
+        try {
+            extraSlices = await runReflex(ctx, content);
+        } catch (e) {
+            log('рефлекс не сработал:', e?.message ?? e);
+        }
+    }
+
+    inject(buildInjection(content, { coreCategories, recentText, extraSlices }));
+}
+
+// ─── Рефлекс памяти ──────────────────────────────────────────────────
+
+/** Итог прошлой разведки — свайп и повтор того же момента не платят второй раз. */
+let lastScout = { mark: '', slices: [] };
+
+/**
+ * Короткая разведка перед ответом: оглавление + хвост разговора уезжают
+ * тому же подключению через generateRaw (без карточки и истории), модель
+ * отвечает фильтрами — и выбранные ею записи попадают в инъекцию основного
+ * прохода. Весь блокнот рефлексу недоступен. Ошибки и таймаут — молча без него.
+ */
+async function runReflex(ctx, content) {
+    if (typeof ctx.generateRaw !== 'function') return [];
+    const glossary = glossarySlice(content);
+    if (!glossary) return [];
+
+    const s = getSettings();
+    const depth = Math.max(1, Number(s.reflexDepth) || 4);
+    const dialogue = (ctx.chat ?? [])
+        .filter(m => m && !m.is_system)
+        .slice(-depth)
+        .map(m => `${m.name ?? '?'}: ${String(m.mes ?? '').slice(-800)}`)
+        .join(String.fromCharCode(10));
+    if (!dialogue) return [];
+
+    const mark = fingerprint(dialogue);
+    if (lastScout.mark === mark) return lastScout.slices;
+
+    const { systemPrompt, prompt } = buildScoutPrompt(glossary, dialogue);
+    const reply = await Promise.race([
+        ctx.generateRaw({ prompt, systemPrompt, responseLength: 100 }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('таймаут разведки')), 15000)),
+    ]);
+
+    const slices = reflexSlices(content, reply);
+    lastScout = { mark, slices };
+    log('рефлекс:', String(reply ?? '').trim(), '->', slices.length, 'записей');
+    return slices;
 }
 
 // ─── Обработка сообщения ─────────────────────────────────────────────
@@ -474,6 +525,20 @@ function bindUI() {
             saveSettings();
         });
     }
+    const rfx = document.getElementById('am_reflex');
+    if (rfx) {
+        rfx.addEventListener('change', (e) => {
+            getSettings().reflex = e.target.checked;
+            saveSettings();
+        });
+    }
+    const rfxDepth = document.getElementById('am_reflex_depth');
+    if (rfxDepth) {
+        rfxDepth.addEventListener('input', (e) => {
+            getSettings().reflexDepth = Math.max(1, Number(e.target.value) || 4);
+            saveSettings();
+        });
+    }
     const chk = document.getElementById('am_check');
     if (chk) chk.addEventListener('click', runDiagnostics);
     bindBindingsUI();
@@ -505,6 +570,10 @@ function updateUI() {
     if (depth) depth.value = s.scanDepth;
     const keep = document.getElementById('am_keep_blocks');
     if (keep) keep.checked = s.keepBlocks;
+    const rfx = document.getElementById('am_reflex');
+    if (rfx) rfx.checked = s.reflex;
+    const rfxDepth = document.getElementById('am_reflex_depth');
+    if (rfxDepth) rfxDepth.value = s.reflexDepth;
     const st = document.getElementById('am_status');
     if (st) st.textContent = lastStatus;
 }
