@@ -14,6 +14,7 @@ import { looksLikeNotebook } from './notebook.js';
 export const PROBLEM = {
     NO_CHARACTER: 'no_character',
     NO_BINDING: 'no_binding',
+    INCOMPLETE_BINDING: 'incomplete_binding',
     NO_LOREBOOK: 'no_lorebook',
     FOREIGN: 'foreign',
 };
@@ -63,8 +64,11 @@ export function resolveTarget(ctx, messageIndex, bindings = {}) {
     if (!character) return { world: null, lorebook: null, problem: PROBLEM.NO_CHARACTER, character: null };
 
     const b = bindingOf(bindings, character.avatar);
-    if (!b || !b.world || !b.lorebook) {
+    if (!b) {
         return { world: null, lorebook: null, problem: PROBLEM.NO_BINDING, character };
+    }
+    if (!b.world || !b.lorebook) {
+        return { world: null, lorebook: null, problem: PROBLEM.INCOMPLETE_BINDING, character };
     }
     return { world: b.world, lorebook: b.lorebook, problem: null, character };
 }
@@ -164,6 +168,8 @@ export function describeProblem(problem, world, lorebookName) {
             return 'не удалось определить персонажа, которому принадлежит сообщение';
         case PROBLEM.NO_BINDING:
             return `для персонажа «${world}» нет связки в таблице — добавьте её в настройках AutoMemory`;
+        case PROBLEM.INCOMPLETE_BINDING:
+            return `связка персонажа «${world}» неполная (без лорбука, строка вида «мир / ?») — удалите её крестиком и добавьте заново, выбрав лорбук`;
         case PROBLEM.NO_LOREBOOK:
             return `лорбук «${lorebookName}» не найден в мире «${world}»`;
         case PROBLEM.FOREIGN:
