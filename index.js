@@ -106,10 +106,11 @@ async function onMessageReceived(messageIndex) {
     const bad = items.filter(i => i.error);
     if (!good.length && !bad.length && !truncatedNote) return;
 
-    // Блок — служебная разметка, в сообщении ей не место при любом исходе
+    // Блок — служебная разметка; вырезается, если человек не попросил оставлять
     const cleanup = () => {
-        msg.mes = visible;
         msg.extra[MODULE_NAME] = mark;
+        if (s.keepBlocks) return;
+        msg.mes = visible;
         syncSwipe(msg);
         redraw(ctx, messageIndex, msg);
     };
@@ -273,6 +274,13 @@ function bindUI() {
             saveSettings();
         });
     }
+    const keep = document.getElementById('am_keep_blocks');
+    if (keep) {
+        keep.addEventListener('change', (e) => {
+            getSettings().keepBlocks = e.target.checked;
+            saveSettings();
+        });
+    }
     const name = document.getElementById('am_lorebook_name');
     if (name) {
         name.addEventListener('input', (e) => {
@@ -308,6 +316,8 @@ function updateUI() {
     if (name) name.value = s.lorebookName;
     if (core) core.value = s.coreCategories;
     if (depth) depth.value = s.scanDepth;
+    const keep = document.getElementById('am_keep_blocks');
+    if (keep) keep.checked = s.keepBlocks;
     const st = document.getElementById('am_status');
     if (st) st.textContent = lastStatus;
 }
