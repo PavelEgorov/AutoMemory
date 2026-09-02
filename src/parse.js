@@ -97,22 +97,3 @@ function parseBlock(inner) {
         error: null,
     };
 }
-
-/** Команды выборки в тексте ответа ИИ: /note_show [аргумент] в начале строки. */
-const RE_COMMAND = /^[ \t]*\/note_show\b[ \t]*(.*)$/gim;
-
-/**
- * Достаёт команды выборки и убирает их строки из текста.
- * @returns {{queries: string[], stripped: string}}
- */
-export function extractCommands(text) {
-    const src = String(text ?? '');
-    const queries = [];
-    RE_COMMAND.lastIndex = 0;
-    let m;
-    while ((m = RE_COMMAND.exec(src)) !== null) {
-        queries.push(m[1].trim());
-    }
-    const stripped = src.replace(RE_COMMAND, '').replace(/\n{3,}/g, '\n\n').trim();
-    return { queries, stripped: queries.length ? stripped : src };
-}

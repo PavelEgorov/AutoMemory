@@ -8,7 +8,7 @@
 
 import { getStringHash } from '../../../utils.js';
 import { MODULE_NAME, LOG_PREFIX, getSettings, saveSettings, log } from './src/settings.js';
-import { extractBlocks, extractCommands } from './src/parse.js';
+import { extractBlocks } from './src/parse.js';
 import { parseNotebook, renderNotebook, appendRecord, resolveRefine, formatDate } from './src/notebook.js';
 import { resolveWorld, readNotebook, writeNotebook, describeProblem } from './src/lorebook.js';
 import { buildInjection, runQuery } from './src/delivery.js';
@@ -33,8 +33,6 @@ const INJECTION_DEPTH = 4;
 
 /** Тип текущей генерации — чтобы фильтр не пускал память в тихие прогоны. */
 let currentGenType = 'normal';
-/** Последняя команда выборки от ИИ; результат уезжает со следующей генерацией. */
-let lastQuery = null;
 const injectionFilter = () => currentGenType !== 'quiet' && currentGenType !== 'impersonate';
 
 function inject(text) {
@@ -69,15 +67,11 @@ async function onGenerationStarted(type, _params, dryRun) {
     const recentText = (ctx.chat ?? [])
         .slice(-Math.max(1, Number(s.scanDepth) || 2))
         .map(m => String(m?.mes ?? ''))
-        .join('\n')
+        .join(String.fromCharCode(10))
         .toLowerCase();
 
     const coreCategories = String(s.coreCategories ?? '').split(',');
-    const base = buildInjection(content, { coreCategories, recentText });
-    const queryResult = lastQuery === null ? '' : runQuery(content, lastQuery);
-    // весь лорбук уже содержит оглавление — не дублируем его
-    inject(queryResult.startsWith('[INDEX]') ? queryResult
-        : [base, queryResult].filter(Boolean).join('\n'));
+    inject(buildInjection(content, { coreCategories, recentText }));
 }
 
 // ─── Обработка сообщения ─────────────────────────────────────────────
@@ -98,14 +92,7 @@ async function onMessageReceived(messageIndex) {
     msg.extra = msg.extra || {};
     if (msg.extra[MODULE_NAME] === mark) { log('уже обработано'); return; }
 
-    const blocks = extractBlocks(text);
-    const commands = extractCommands(blocks.stripped);
-    if (commands.queries.length) {
-        lastQuery = commands.queries[commands.queries.length - 1];
-        log('запрошена выборка:', lastQuery || '(весь лорбук)');
-    }
-    const { items, unclosed } = blocks;
-    const stripped = commands.stripped;
+    const { items, stripped, unclosed } = extractBlocks(text);
 
     // Оборванный стримом блок без </memory>: срезаем его, запись не сохраняется
     let visible = stripped;
@@ -117,8 +104,7 @@ async function onMessageReceived(messageIndex) {
 
     const good = items.filter(i => i.record);
     const bad = items.filter(i => i.error);
-    const onlyCommands = !good.length && !bad.length && !truncatedNote;
-    if (onlyCommands && !commands.queries.length) return;
+    if (!good.length && !bad.length && !truncatedNote) return;
 
     // Блок — служебная разметка, в сообщении ей не место при любом исходе
     const cleanup = () => {
@@ -129,7 +115,6 @@ async function onMessageReceived(messageIndex) {
     };
 
     // Нечего сохранять — к лорбуку не ходим, пустая перезапись никому не нужна
-    if (onlyCommands) { cleanup(); return; }
     if (!good.length) {
         cleanup();
         return report([], bad, [], truncatedNote);
@@ -220,6 +205,57 @@ function redraw(ctx, messageIndex, msg) {
     }
 }
 
+// ─── Инструмент note_show ────────────────────────────────────────────
+
+/**
+ * Регистрирует вызов инструмента: модель запрашивает выборку посреди генерации
+ * и сразу получает результат. Текстовой команды нет — только этот путь.
+ */
+function registerNoteTool(ctx) {
+    if (typeof ctx.registerFunctionTool !== 'function') {
+        console.warn(LOG_PREFIX, 'registerFunctionTool недоступен — выборка работать не будет');
+        return;
+    }
+    ctx.registerFunctionTool({
+        name: 'note_show',
+        displayName: 'Блокнот',
+        description: 'Твой блокнот — долговременная память в лорбуке. Возвращает записи по фильтру. ' +
+            'Фильтр: категория (например ANALYTICS_NEK), тег с решёткой (#spiral), дата (15.01.2026), ' +
+            'месяц (декабрь), период (с декабря по февраль) или «за последний месяц». ' +
+            'Фильтры комбинируются через пробел и работают как И: «#spiral с декабря по февраль». ' +
+            'Пустой фильтр — весь блокнот целиком.',
+        parameters: {
+            $schema: 'http://json-schema.org/draft-04/schema#',
+            type: 'object',
+            properties: {
+                filter: {
+                    type: 'string',
+                    description: 'Фильтр выборки; пустая строка — весь блокнот',
+                },
+            },
+            required: [],
+        },
+        action: async (args) => {
+            const s = getSettings();
+            if (!s.enabled) return 'AutoMemory выключено.';
+
+            const c = SillyTavern.getContext();
+            const { world, problem } = resolveWorld(c, -1);
+            if (problem) return 'Блокнот недоступен: ' + describeProblem(problem, world, s.lorebookName);
+
+            const nb = await readNotebook(c, world, s.lorebookName);
+            if (nb.problem) return 'Блокнот недоступен: ' + describeProblem(nb.problem, world, s.lorebookName);
+
+            const result = runQuery(nb.content, args?.filter ?? '');
+            log('note_show:', args?.filter || '(весь блокнот)', '->', result.length, 'симв.');
+            return result || 'По этому фильтру записей нет.';
+        },
+        shouldRegister: () => getSettings().enabled,
+        stealth: false,
+    });
+    log('инструмент note_show зарегистрирован');
+}
+
 // ─── Панель настроек ─────────────────────────────────────────────────
 
 function bindUI() {
@@ -292,9 +328,11 @@ function updateUI() {
         console.warn(LOG_PREFIX, 'панель настроек не загрузилась:', e);
     }
 
+    registerNoteTool(ctx);
+
     eventSource.on(event_types.MESSAGE_RECEIVED, onMessageReceived);
     eventSource.on(event_types.GENERATION_STARTED, onGenerationStarted);
-    eventSource.on(event_types.CHAT_CHANGED, () => { lastQuery = null; inject(''); });
+    eventSource.on(event_types.CHAT_CHANGED, () => inject(''));
 
     eventSource.on(event_types.APP_READY, () => {
         updateUI();
