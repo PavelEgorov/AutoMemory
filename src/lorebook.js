@@ -1,180 +1,111 @@
 /**
- * Доступ к хранилищу: мир персонажа и лорбук внутри него.
+ * Доступ к World Info: список миров, чтение и запись блокнота.
  *
- * Термины проекта: МИР — файл World Info, привязанный к карточке персонажа;
- * ЛОРБУК — запись внутри мира, где ИИ ведёт блокнот. Название лорбука человек
- * указывает в настройках расширения. Мы ничего не создаём и не чистим.
- *
- * Путь импорта: файл лежит в third-party/<папка>/src/, до scripts/ — четыре уровня вверх.
+ * Работаем с объектом, который вернул loadWorldInfo, и не пересобираем
+ * entries: там могут лежать чужие записи, которые не наши, чтобы терять.
  */
 
-import { setWIOriginalDataValue, originalWIDataKeyMap, world_info, selected_world_info } from '../../../../world-info.js';
-import { looksLikeNotebook } from './notebook.js';
+import { warn } from './settings.js';
 
-export const PROBLEM = {
-    NO_CHARACTER: 'no_character',
-    NO_BINDING: 'no_binding',
-    INCOMPLETE_BINDING: 'incomplete_binding',
-    NO_LOREBOOK: 'no_lorebook',
-    FOREIGN: 'foreign',
-};
+// Модуль World Info лежит в public/scripts/world-info.js, а расширение —
+// в public/scripts/extensions/third-party/<папка>/src/, отсюда четыре уровня вверх.
+import {
+    loadWorldInfo,
+    saveWorldInfo,
+    createWorldInfoEntry,
+    world_names,
+} from '../../../../world-info.js';
 
-/**
- * Персонаж, которому принадлежит сообщение.
- * Сначала по original_avatar — уникальный ключ карточки, ST ставит его на каждое
- * сообщение именно для этого. Имя — запасной путь, characterId — последний.
- */
-export function resolveCharacter(ctx, messageIndex) {
-    const msg = ctx.chat?.[messageIndex];
-    const chars = Array.isArray(ctx.characters) ? ctx.characters : [];
-
-    if (msg?.original_avatar) {
-        const byAvatar = chars.find(c => c?.avatar === msg.original_avatar);
-        if (byAvatar) return byAvatar;
-    }
-    if (msg?.name) {
-        const needle = String(msg.name).toLowerCase();
-        const byName = chars.find(c => c?.name?.toLowerCase() === needle || c?.avatar === msg.name);
-        if (byName) return byName;
-    }
-    return chars[ctx.characterId] ?? null;
-}
-
-/**
- * Миры конкретного персонажа: основной из карточки и дополнительные
- * (кнопка-глобус, выбор «Additional» — хранятся в world_info.charLore).
- * Чужие, чатовые и глобальные миры не смотрим: лорбук принадлежит персонажу.
- * @returns {{worlds: string[], problem: string|null, character: object|null}}
- */
-/** Связка из таблицы: строка (старый вид, только мир) или {world, lorebook}. */
-export function bindingOf(bindings, avatar) {
-    const b = bindings?.[avatar];
-    if (!b) return null;
-    if (typeof b === 'string') return { world: b, lorebook: '' };
-    return { world: b.world || '', lorebook: b.lorebook || '' };
-}
-
-/**
- * Цель записи для персонажа сообщения: мир и лорбук из таблицы связок.
- * Без связки писать некуда — привязки таверны не читаем, имена не угадываем.
- * @returns {{world: string|null, lorebook: string|null, problem: string|null, character: object|null}}
- */
-export function resolveTarget(ctx, messageIndex, bindings = {}) {
-    const character = resolveCharacter(ctx, messageIndex);
-    if (!character) return { world: null, lorebook: null, problem: PROBLEM.NO_CHARACTER, character: null };
-
-    const b = bindingOf(bindings, character.avatar);
-    if (!b) {
-        return { world: null, lorebook: null, problem: PROBLEM.NO_BINDING, character };
-    }
-    if (!b.world || !b.lorebook) {
-        return { world: null, lorebook: null, problem: PROBLEM.INCOMPLETE_BINDING, character };
-    }
-    return { world: b.world, lorebook: b.lorebook, problem: null, character };
-}
-
-/** Дополнительные миры персонажа из world_info.charLore. */
-export function charExtraWorlds(character) {
+/** Имена всех миров, известных таверне. */
+export function listWorlds() {
     try {
-        const fileName = String(character?.avatar ?? '').replace(/\.[^/.]+$/, '');
-        const extra = world_info?.charLore?.find(e => e.name === fileName)?.extraBooks;
-        return Array.isArray(extra) ? extra.filter(Boolean) : [];
+        return Array.isArray(world_names) ? [...world_names] : [];
     } catch (e) {
-        console.warn('[AutoMemory] не удалось прочитать дополнительные миры:', e);
+        warn('список миров недоступен:', e);
         return [];
     }
 }
 
-/**
- * Сырой снимок всех мест, где таверна может хранить привязку миров.
- * Только для диагностики: печатается человеку, на поведение не влияет.
- */
-export function bindingSnapshot(ctx, character) {
-    const out = [];
-    const show = (v) => v === undefined ? 'undefined' : v === '' ? '«» (пустая строка)' : JSON.stringify(v);
-    out.push('data.extensions.world: ' + show(character?.data?.extensions?.world));
-    out.push('character.world (старое поле): ' + show(character?.world));
-    try { out.push('привязка к чату (chatMetadata): ' + show(ctx.chatMetadata?.['world_info'])); }
-    catch { out.push('привязка к чату: недоступна'); }
+/** Загрузить мир. Возвращает объект книги или null. */
+export async function openWorld(world) {
+    if (!world) return null;
     try {
-        out.push('активные глобально: ' + (Array.isArray(selected_world_info) && selected_world_info.length
-            ? selected_world_info.join(', ') : '— нет —'));
-    } catch { out.push('активные глобально: недоступны'); }
-    try {
-        const lore = Array.isArray(world_info?.charLore) ? world_info.charLore : [];
-        out.push('charLore целиком: ' + (lore.length
-            ? lore.map(e => String(e?.name) + ' → [' + (e?.extraBooks ?? []).join(', ') + ']').join('; ')
-            : '— пусто —'));
-    } catch (e) { out.push('charLore: ошибка чтения — ' + String(e?.message ?? e)); }
-    return out;
+        return await loadWorldInfo(world);
+    } catch (e) {
+        warn(`мир «${world}» не открылся:`, e);
+        return null;
+    }
+}
+
+/** Найти запись блокнота по comment. Возвращает объект записи или null. */
+export function findEntry(book, entryName) {
+    if (!book?.entries) return null;
+    for (const uid of Object.keys(book.entries)) {
+        const entry = book.entries[uid];
+        if (entry?.comment === entryName) return entry;
+    }
+    return null;
 }
 
 /**
- * Находит лорбук по названию в заданном мире. Пустой лорбук годится —
- * начнём с чистого листа. Наш формат — работаем с сохранённым. Чужое не трогаем.
- * @returns {Promise<{data: object|null, entry: object|null, content: string, problem: string|null}>}
+ * Проверить связку: открывается ли мир и есть ли в нём запись блокнота.
+ * @returns {Promise<{ok: boolean, reason: string, entry: object|null}>}
  */
-export async function readNotebook(ctx, world, lorebookName) {
-    const name = String(lorebookName ?? '').trim();
-    if (!name || !world) {
-        return { data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
-    }
-
-    const data = await ctx.loadWorldInfo(world);
-    if (!data || !data.entries) {
-        return { data: null, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
-    }
-
-    // название приходит из выпадающего списка — совпадение точное, по строке
-    const entry = Object.values(data.entries).filter(Boolean)
-        .find(e => String(e.comment ?? '').trim() === name);
-    if (!entry) {
-        return { data, entry: null, content: '', problem: PROBLEM.NO_LOREBOOK };
-    }
-
-    const content = String(entry.content ?? '');
-    if (!looksLikeNotebook(content)) {
-        return { data, entry, content, problem: PROBLEM.FOREIGN };
-    }
-
-    return { data, entry, content, problem: null };
+export async function checkBinding(world, entryName) {
+    if (!world) return { ok: false, reason: 'мир не выбран', entry: null };
+    const book = await openWorld(world);
+    if (!book) return { ok: false, reason: `мир «${world}» не открылся`, entry: null };
+    const entry = findEntry(book, entryName);
+    if (!entry) return { ok: false, reason: `в мире «${world}» нет записи «${entryName}»`, entry: null };
+    return { ok: true, reason: `запись «${entryName}» на месте`, entry };
 }
 
 /**
- * Сохраняет содержимое лорбука. Пишет сразу, без отложенного сохранения.
+ * Завести запись блокнота, если её ещё нет.
+ * Поля, которых мы не касаемся, остаются как их задала таверна:
+ * null в поле — это «Глоб. настройка» человека, а не false.
  */
-export async function writeNotebook(ctx, world, data, entry, content) {
-    entry.content = content;
+export async function ensureEntry(world, entryName) {
+    const book = await openWorld(world);
+    if (!book) return { ok: false, reason: `мир «${world}» не открылся` };
 
-    if (data.originalData) {
-        try {
-            setWIOriginalDataValue(data, entry.uid, originalWIDataKeyMap['content'], content);
-        } catch (e) {
-            console.warn('[AutoMemory] не удалось синхронизировать originalData:', e);
-        }
+    if (findEntry(book, entryName)) {
+        return { ok: true, reason: `запись «${entryName}» уже была`, created: false };
     }
 
-    await ctx.saveWorldInfo(world, data, true);
+    const entry = createWorldInfoEntry(world, book);
+    if (!entry) return { ok: false, reason: 'таверна не создала запись' };
 
-    if (typeof ctx.reloadWorldInfoEditor === 'function') {
-        try { ctx.reloadWorldInfoEditor(world); } catch { /* панель может быть закрыта */ }
-    }
+    entry.comment = entryName;
+    entry.key = [];
+    entry.keysecondary = [];
+    entry.content = '';
+    entry.constant = false;
+    entry.disable = false;
+
+    await saveWorldInfo(world, book, true);
+    return { ok: true, reason: `запись «${entryName}» создана`, created: true };
 }
 
-/** Человекочитаемое объяснение проблемы. */
-export function describeProblem(problem, world, lorebookName) {
-    switch (problem) {
-        case PROBLEM.NO_CHARACTER:
-            return 'не удалось определить персонажа, которому принадлежит сообщение';
-        case PROBLEM.NO_BINDING:
-            return `для персонажа «${world}» нет связки в таблице — добавьте её в настройках AutoMemory`;
-        case PROBLEM.INCOMPLETE_BINDING:
-            return `связка персонажа «${world}» неполная (без лорбука, строка вида «мир / ?») — удалите её крестиком и добавьте заново, выбрав лорбук`;
-        case PROBLEM.NO_LOREBOOK:
-            return `лорбук «${lorebookName}» не найден в мире «${world}»`;
-        case PROBLEM.FOREIGN:
-            return `лорбук «${lorebookName}» не пуст, и это не наш формат — трогать его не будем`;
-        default:
-            return 'неизвестная проблема';
+/** Прочитать текст блокнота. */
+export async function readNotebook(world, entryName) {
+    const book = await openWorld(world);
+    const entry = findEntry(book, entryName);
+    return entry ? String(entry.content ?? '') : null;
+}
+
+/** Записать текст блокнота целиком. */
+export async function writeNotebook(world, entryName, text) {
+    const book = await openWorld(world);
+    if (!book) return { ok: false, reason: `мир «${world}» не открылся` };
+    const entry = findEntry(book, entryName);
+    if (!entry) return { ok: false, reason: `в мире «${world}» нет записи «${entryName}»` };
+
+    entry.content = text;
+    if (book.originalData) {
+        const original = book.originalData.entries?.[entry.uid];
+        if (original) original.content = text;
     }
+    await saveWorldInfo(world, book, true);
+    return { ok: true, reason: 'записано' };
 }

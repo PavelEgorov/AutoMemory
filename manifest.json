@@ -6,7 +6,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "jonnycomein",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "homePage": "https://github.com/PavelEgorov/AutoMemory",
-    "auto_update": false
+    "auto_update": true
 }

@@ -1,68 +1,187 @@
-/* AutoMemory — только свой префикс, чтобы не задеть остальной интерфейс */
+/* AutoMemory — панель настроек.
+   Таверну часто открывают с телефона, поэтому раскладка рассчитана на узкий
+   экран и на палец: подпись над полем, поле во всю ширину, крупные цели
+   нажатия. На широком экране подпись встаёт слева от поля. */
 
-.am-settings .am-row {
-    margin-bottom: 12px;
+.am-settings .am-title {
+    margin: 0.8em 0 0.3em;
+    opacity: 0.9;
 }
 
-.am-settings .am-row label.checkbox_label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+.am-settings .am-subtitle {
+    margin: 0.7em 0 0.3em;
+    font-weight: bold;
+    font-size: 0.95em;
+    opacity: 0.8;
 }
 
 .am-settings .am-hint {
     display: block;
-    margin-top: 4px;
-    font-size: 0.85em;
-    opacity: 0.65;
-    line-height: 1.4;
+    margin: 0 0 0.6em;
+    opacity: 0.6;
+    line-height: 1.35;
 }
 
-.am-settings .am-hint code {
-    font-size: 0.95em;
-    opacity: 0.9;
+/* Галки: цель нажатия во всю ширину строки, а не только сам квадратик. */
+.am-settings .am-check {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    min-height: 2.2em;
+    padding: 0.15em 0;
+    cursor: pointer;
 }
 
-.am-settings .am-divider {
-    margin: 12px 0;
-    opacity: 0.25;
+.am-settings .am-check input[type="checkbox"] {
+    width: 1.15em;
+    height: 1.15em;
+    flex: 0 0 auto;
+}
+
+/* Строка поля: на узком экране подпись над полем, на широком — слева. */
+.am-settings .am-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25em;
+    margin: 0.5em 0;
+}
+
+.am-settings .am-label {
+    opacity: 0.85;
+    line-height: 1.3;
+}
+
+.am-settings .am-row > select,
+.am-settings .am-row > input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    min-height: 2.4em;
+}
+
+.am-settings .am-row > b {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+@media (min-width: 480px) {
+    .am-settings .am-row:not(.am-row-wide) {
+        flex-direction: row;
+        align-items: center;
+        gap: 0.6em;
+    }
+
+    .am-settings .am-row:not(.am-row-wide) > .am-label {
+        flex: 0 0 8em;
+    }
+
+    .am-settings .am-row:not(.am-row-wide) > select,
+    .am-settings .am-row:not(.am-row-wide) > input {
+        flex: 1 1 auto;
+        width: auto;
+    }
+}
+
+/* Кнопки: на узком экране в столбец во всю ширину, на широком — в ряд. */
+.am-settings .am-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+    margin: 0.6em 0 0.3em;
+}
+
+.am-settings .am-buttons > .menu_button {
+    width: 100%;
+    min-height: 2.6em;
+    white-space: normal;
+}
+
+@media (min-width: 480px) {
+    .am-settings .am-buttons {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .am-settings .am-buttons > .menu_button {
+        width: auto;
+        flex: 1 1 12em;
+    }
 }
 
 .am-settings .am-status {
-    margin-top: 4px;
+    min-height: 1.2em;
+    margin-bottom: 0.4em;
     font-size: 0.9em;
-    opacity: 0.85;
-    word-break: break-word;
-    white-space: pre-wrap;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    opacity: 0.9;
+}
+
+.am-settings .am-status.am-ok {
+    color: var(--active, #6c6);
+}
+
+.am-settings .am-status.am-fail {
+    color: var(--warning, #e66);
+}
+
+/* Таблица связок: строка на персонажа, кнопка удаления — крупная. */
+.am-settings .am-bindings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3em;
+    margin-bottom: 0.4em;
 }
 
 .am-settings .am-bind-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 2px 0;
+    gap: 0.5em;
+    min-height: 2.4em;
+    padding: 0.2em 0.4em;
+    border-radius: 0.3em;
+    background: var(--black30a, rgba(0, 0, 0, 0.15));
+}
+
+.am-settings .am-bind-row > span {
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.am-settings .am-bind-current {
+    outline: 1px solid var(--active, #6c6);
 }
 
 .am-settings .am-bind-del {
-    min-width: 2em;
-    padding: 2px 6px;
+    flex: 0 0 auto;
+    min-width: 2.4em;
+    min-height: 2.2em;
 }
 
-.am-settings .am-bind-add {
-    display: flex;
-    gap: 6px;
-    margin-top: 6px;
-    flex-wrap: wrap;
+.am-settings .am-bindings-empty {
+    opacity: 0.6;
+    line-height: 1.35;
 }
 
-.am-settings .am-bind-add select {
-    flex: 1;
-    min-width: 8em;
+.am-settings .am-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    font-family: inherit;
 }
 
-/* строка текущего персонажа в таблице связок */
-.am-settings .am-bind-row.am-bind-current > span {
-    color: var(--SmartThemeQuoteColor, #58a6d8);
-    font-weight: 600;
+.am-settings .am-mono {
+    font-family: var(--monoFontFamily, monospace);
+    font-size: 0.85em;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.am-settings .am-divider {
+    margin: 1em 0;
+    opacity: 0.25;
 }
