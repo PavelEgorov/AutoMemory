@@ -3,23 +3,20 @@
  *
  * Работаем с объектом, который вернул loadWorldInfo, и не пересобираем
  * entries: там могут лежать чужие записи, которые не наши, чтобы терять.
+ *
+ * Всё, что таверна отдаёт через контекст, берётся из контекста
+ * (reference/SillyTavern/public/scripts/st-context.js:276-282). Прямой импорт
+ * модуля таверны опасен: путь к нему зависит от устройства чужого дерева, а
+ * несуществующий импорт роняет не одну функцию, а весь модуль расширения —
+ * тогда расширение не загружается целиком.
  */
 
 import { warn } from './settings.js';
 
-// Модуль World Info лежит в public/scripts/world-info.js, а расширение —
-// в public/scripts/extensions/third-party/<папка>/src/, отсюда четыре уровня вверх.
-import {
-    loadWorldInfo,
-    saveWorldInfo,
-    createWorldInfoEntry,
-    world_names,
-} from '../../../../world-info.js';
-
 /** Имена всех миров, известных таверне. */
 export function listWorlds() {
     try {
-        return Array.isArray(world_names) ? [...world_names] : [];
+        return SillyTavern.getContext().getWorldInfoNames();
     } catch (e) {
         warn('список миров недоступен:', e);
         return [];
@@ -30,11 +27,29 @@ export function listWorlds() {
 export async function openWorld(world) {
     if (!world) return null;
     try {
-        return await loadWorldInfo(world);
+        return await SillyTavern.getContext().loadWorldInfo(world);
     } catch (e) {
         warn(`мир «${world}» не открылся:`, e);
         return null;
     }
+}
+
+/** Сохранить мир целиком, сразу — без отложенной записи. */
+async function saveWorld(world, book) {
+    await SillyTavern.getContext().saveWorldInfo(world, book, true);
+}
+
+/**
+ * Создать пустую запись в книге.
+ *
+ * Единственное, чего в контексте нет: createWorldInfoEntry живёт только в
+ * модуле таверны (reference/SillyTavern/public/scripts/world-info.js:4057).
+ * Берём её оттуда, но импортом по требованию: не нашлось — отваливается одно
+ * создание записи, а расширение работает дальше.
+ */
+async function createEntry(world, book) {
+    const module = await import('../../../../world-info.js');
+    return module.createWorldInfoEntry(world, book);
 }
 
 /** Найти запись блокнота по comment. Возвращает объект записи или null. */
@@ -73,7 +88,13 @@ export async function ensureEntry(world, entryName) {
         return { ok: true, reason: `запись «${entryName}» уже была`, created: false };
     }
 
-    const entry = createWorldInfoEntry(world, book);
+    let entry = null;
+    try {
+        entry = await createEntry(world, book);
+    } catch (e) {
+        warn('создание записи недоступно:', e);
+        return { ok: false, reason: 'таверна не дала создать запись' };
+    }
     if (!entry) return { ok: false, reason: 'таверна не создала запись' };
 
     entry.comment = entryName;
@@ -83,7 +104,7 @@ export async function ensureEntry(world, entryName) {
     entry.constant = false;
     entry.disable = false;
 
-    await saveWorldInfo(world, book, true);
+    await saveWorld(world, book);
     return { ok: true, reason: `запись «${entryName}» создана`, created: true };
 }
 
@@ -106,6 +127,6 @@ export async function writeNotebook(world, entryName, text) {
         const original = book.originalData.entries?.[entry.uid];
         if (original) original.content = text;
     }
-    await saveWorldInfo(world, book, true);
+    await saveWorld(world, book);
     return { ok: true, reason: 'записано' };
 }

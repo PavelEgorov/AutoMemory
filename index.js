@@ -6,7 +6,7 @@
  * в модулях src/.
  */
 
-import { MODULE_NAME, LOG_PREFIX, getSettings, log, warn, currentAvatar, currentName, enabledFor, bindingFor } from './src/settings.js';
+import { MODULE_NAME, LOG_PREFIX, getSettings, warn, currentAvatar, currentName, enabledFor, bindingFor } from './src/settings.js';
 import { bindUI, refreshPanel, refreshLog, refreshWorlds, refreshProfiles } from './src/ui.js';
 import { checkBinding } from './src/lorebook.js';
 import { sourceName } from './src/connection.js';
